@@ -4,22 +4,35 @@ import (
 	"fmt"
 	"log"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
 
 // RemoteVolume ...
 type RemoteVolume struct {
-	Name string
-	lock sync.Mutex
-	conn *websocket.Conn // TODO: multiple conns
-	wch  chan map[string]interface{}
+	Name      string
+	lock      sync.Mutex
+	conn      *websocket.Conn // TODO: multiple conns
+	wch       chan map[string]interface{}
+	statCache map[string]*statCache
+}
+
+type statCache struct {
+	stat *FileStat
+	time time.Time
 }
 
 var _ Volume = &RemoteVolume{}
+var statCacheExpireTime = time.Second * 5
 
 func NewRemoteVolume(name string, conn *websocket.Conn) *RemoteVolume {
-	return &RemoteVolume{Name: name, conn: conn, wch: make(chan map[string]interface{})}
+	return &RemoteVolume{
+		Name:      name,
+		conn:      conn,
+		wch:       make(chan map[string]interface{}),
+		statCache: make(map[string]*statCache),
+	}
 }
 
 func (v *RemoteVolume) Start() {
@@ -47,6 +60,12 @@ func (v *RemoteVolume) Locker() sync.Locker {
 }
 
 func (v *RemoteVolume) Stat(path string) (*FileStat, error) {
+	if s, ok := v.statCache[path]; ok {
+		if s.time.Add(statCacheExpireTime).After(time.Now()) {
+			return s.stat, nil
+			delete(v.statCache, path)
+		}
+	}
 	var res struct {
 		S *FileStat `json:"stat"`
 	}
@@ -57,6 +76,7 @@ func (v *RemoteVolume) Stat(path string) (*FileStat, error) {
 	if res.S == nil {
 		return nil, fmt.Errorf("invalid response")
 	}
+	v.statCache[path] = &statCache{stat: res.S, time: time.Now()}
 	return res.S, nil
 }
 
@@ -81,11 +101,13 @@ func (v *RemoteVolume) Write(path string, b []byte, offset int64) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	delete(v.statCache, path)
 	return res["l"], nil
 }
 
 func (v *RemoteVolume) Remove(path string) error {
 	var res map[string]interface{}
+	delete(v.statCache, path)
 	return v.request(map[string]interface{}{"op": "remove", "path": path}, &res)
 }
 
@@ -96,6 +118,9 @@ func (v *RemoteVolume) ReadDir(path string) ([]*File, error) {
 	err := v.request(map[string]interface{}{"op": "files", "path": path}, &res)
 	if err != nil {
 		return nil, err
+	}
+	for _, f := range res.Files {
+		v.statCache[path+"/"+f.Name] = &statCache{stat: &f.FileStat, time: time.Now()}
 	}
 	return res.Files, nil
 }
