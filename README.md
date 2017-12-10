@@ -4,28 +4,29 @@
 
 ## Usage
 
-
-公開
+### ボリュームの登録
 
 ```console
 cfs publish localpath user/volume
 ```
 
-マウント．
+### ボリュームをマウント
+
+一旦Windowsのみ．mountpointは未使用のドライブレターを指定する必要あり.
 
 ```console
 cfs mount user/volume mountpoint
 ```
 
-設定
+### 設定(未実装)
 
 ```console
-cfs config api http://localhost:8080
+cfs config hub http://example.com:8080
 cfs config token TOKENSTRING1234567890
 ```
 
 サーバの起動
 
 ```console
-cfs-server -p 8080
+cfshub -p 8080
 ```
