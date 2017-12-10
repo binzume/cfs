@@ -7,13 +7,14 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/gorilla/websocket"
 )
 
-var DefaultAPI = "http://localhost:8080"
+var DefaultHubAPI = "http://localhost:8080"
 
 type UrlResponse struct {
 	WsUrl      string `json:"ws_url"`
@@ -22,8 +23,12 @@ type UrlResponse struct {
 
 func GetVolumeWebsocketURL(volumePath, token string) (string, error) {
 	client := &http.Client{Timeout: time.Duration(10) * time.Second}
+	HubURL := os.Getenv("CFSHUB_URL")
+	if HubURL == "" {
+		HubURL = DefaultHubAPI
+	}
 
-	req, err := http.NewRequest("POST", DefaultAPI+"/volumes/"+volumePath, nil)
+	req, err := http.NewRequest("POST", HubURL+"/volumes/"+volumePath, nil)
 	if err != nil {
 		return "", err
 	}
@@ -48,8 +53,12 @@ func GetVolumeWebsocketURL(volumePath, token string) (string, error) {
 
 func GetProxyWsURL(volumePath, token string) (string, error) {
 	client := &http.Client{Timeout: time.Duration(10) * time.Second}
+	HubURL := os.Getenv("CFSHUB_URL")
+	if HubURL == "" {
+		HubURL = DefaultHubAPI
+	}
 
-	req, err := http.NewRequest("GET", DefaultAPI+"/volumes/"+volumePath, nil)
+	req, err := http.NewRequest("GET", HubURL+"/volumes/"+volumePath, nil)
 	if err != nil {
 		return "", err
 	}
