@@ -71,8 +71,10 @@ func onConnect(v *LocalVolume, conn *websocket.Conn, target string) {
 	log.Println("disconnect")
 }
 
-func publish(localPath, volumePath string) {
-	v := NewLocalVolume(localPath, volumePath, false)
+func publish(localPath, volumePath string, writable bool) {
+	fmt.Println("publish ", localPath, " to ", volumePath)
+
+	v := NewLocalVolume(localPath, volumePath, writable)
 
 	// proxy mode
 	wsConn, err := ConnectVolume(volumePath, "dummysecret")
@@ -138,18 +140,16 @@ func usage() {
 }
 
 func main() {
+	writable := flag.Bool("w", false, "writable")
 	flag.Parse()
 	if flag.Arg(0) == "help" || flag.NArg() == 0 {
 		usage()
 		return
 	}
 	if flag.Arg(0) == "publish" && flag.NArg() >= 3 {
-		publish(flag.Arg(1), flag.Arg(2))
+		publish(flag.Arg(1), flag.Arg(2), *writable)
 	}
 	if flag.Arg(0) == "mount" && flag.NArg() >= 3 {
 		mount(flag.Arg(1), flag.Arg(2))
-	}
-	if flag.Arg(0) == "mount0" && flag.NArg() >= 3 {
-		mount0(flag.Arg(1), flag.Arg(2))
 	}
 }

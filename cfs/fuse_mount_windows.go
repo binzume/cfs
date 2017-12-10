@@ -195,6 +195,10 @@ func (t *fuseDir) ReadFile(ctx context.Context, fi *dokan.FileInfo, bs []byte, o
 	return t.v.Read(t.path, bs, offset)
 }
 
+func (t *fuseDir) WriteFile(ctx context.Context, fi *dokan.FileInfo, bs []byte, offset int64) (int, error) {
+	return t.v.Write(t.path, bs, offset)
+}
+
 func fuseMount(v Volume, mountPoint string) {
 	if len(mountPoint) > 2 {
 		// q:hoge/fuga -> q: + hoge/fuga

@@ -59,7 +59,12 @@ func (v *LocalVolume) Write(path string, b []byte, offset int64) (int, error) {
 	if !v.writable {
 		return 0, fmt.Errorf("readonly %s", path)
 	}
-	return 0, fmt.Errorf("not supported %s", path)
+	file, err := os.OpenFile(v.localPath(path), os.O_RDWR, 0)
+	if err != nil {
+		return 0, err
+	}
+	defer file.Close()
+	return file.WriteAt(b, offset)
 }
 
 func (v *LocalVolume) ReadDir(path string) ([]*File, error) {

@@ -69,19 +69,19 @@ func (v *RemoteVolume) Read(path string, b []byte, offset int64) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	if mt != 1 {
+	if mt != websocket.BinaryMessage {
 		return 0, fmt.Errorf("invalid msgType")
 	}
 	return copy(b, msg), nil
 }
 
 func (v *RemoteVolume) Write(path string, b []byte, offset int64) (int, error) {
-	var res map[string]interface{}
+	var res map[string]int
 	err := v.request(map[string]interface{}{"op": "write", "path": path, "p": offset, "b": string(b)}, &res)
 	if err != nil {
 		return 0, err
 	}
-	return res["l"].(int), nil
+	return res["l"], nil
 }
 
 func (v *RemoteVolume) ReadDir(path string) ([]*File, error) {
