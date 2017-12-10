@@ -1,7 +1,5 @@
 package main
 
-// +build windows
-
 import (
 	"log"
 	"strings"
@@ -15,8 +13,7 @@ import (
 
 // FileSystem
 type fuseFs struct {
-	root *fuseDir
-	v    Volume
+	v Volume
 }
 
 func (fs *fuseFs) WithContext(ctx context.Context) (context.Context, context.CancelFunc) {
@@ -30,7 +27,7 @@ func (fs *fuseFs) CreateFile(ctx context.Context, fi *dokan.FileInfo, cd *dokan.
 	if err != nil {
 		return nil, false, err
 	}
-	return &fuseDir{v: fs.v, path: path}, st.IsDir, nil
+	return &fuseDir{v: fs.v, path: path, st: st}, st.IsDir, nil
 }
 
 func (fs *fuseFs) GetDiskFreeSpace(ctx context.Context) (dokan.FreeSpace, error) {
@@ -140,6 +137,7 @@ type fuseDir struct {
 	baseFile
 	path string
 	v    Volume
+	st   *FileStat
 }
 
 type FilesResponse struct {
@@ -163,6 +161,7 @@ func (t *fuseDir) FindFiles(ctx context.Context, fi *dokan.FileInfo, p string, c
 		st.Name = f.Name
 		st.FileSize = f.Size
 		st.LastWrite = time.Unix(0, f.UpdatedTime)
+		st.LastAccess = time.Unix(0, f.UpdatedTime)
 		st.Creation = time.Unix(0, f.CreatedTime)
 		if f.IsDir {
 			st.FileAttributes = dokan.FileAttributeDirectory
@@ -176,19 +175,23 @@ func (t *fuseDir) FindFiles(ctx context.Context, fi *dokan.FileInfo, p string, c
 
 func (t *fuseDir) GetFileInformation(ctx context.Context, fi *dokan.FileInfo) (*dokan.Stat, error) {
 	debug("GetFileInformation " + t.path)
-	f, err := t.v.Stat(t.path)
-	if err != nil {
-		return nil, err
+	if t.st == nil {
+		f, err := t.v.Stat(t.path)
+		if err != nil {
+			return nil, err
+		}
+		t.st = f
 	}
-
-	st := &dokan.Stat{}
+	f := t.st
+	st := &dokan.Stat{
+		FileSize:   f.Size,
+		LastWrite:  time.Unix(0, f.UpdatedTime),
+		LastAccess: time.Unix(0, f.UpdatedTime),
+		Creation:   time.Unix(0, f.CreatedTime),
+	}
 	if f.IsDir {
 		st.FileAttributes = dokan.FileAttributeDirectory
 	}
-	st.FileSize = f.Size
-	st.LastWrite = time.Unix(0, f.UpdatedTime)
-	st.LastAccess = time.Unix(0, f.UpdatedTime)
-	st.Creation = time.Unix(0, f.CreatedTime)
 	return st, nil
 }
 
@@ -197,6 +200,7 @@ func (t *fuseDir) ReadFile(ctx context.Context, fi *dokan.FileInfo, bs []byte, o
 }
 
 func (t *fuseDir) WriteFile(ctx context.Context, fi *dokan.FileInfo, bs []byte, offset int64) (int, error) {
+	t.st = nil
 	return t.v.Write(t.path, bs, offset)
 }
 
@@ -215,7 +219,7 @@ func fuseMount(v Volume, mountPoint string) {
 		mountPoint = mountPoint[:2]
 	}
 
-	myFileSystem := &fuseFs{root: &fuseDir{v: v}, v: v}
+	myFileSystem := &fuseFs{v: v}
 	mp, err := dokan.Mount(&dokan.Config{FileSystem: myFileSystem, Path: mountPoint})
 	if err != nil {
 		log.Fatal("Mount failed:", err)

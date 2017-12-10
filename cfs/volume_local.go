@@ -43,7 +43,7 @@ func (v *LocalVolume) Stat(path string) (*FileStat, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &FileStat{IsDir: fi.IsDir(), Size: fi.Size(), UpdatedTime: fi.ModTime().UnixNano()}, nil
+	return &FileStat{IsDir: fi.IsDir(), Size: fi.Size(), UpdatedTime: fi.ModTime().UnixNano(), CreatedTime: GetCTime(fi)}, nil
 }
 
 func (v *LocalVolume) Read(path string, b []byte, offset int64) (int, error) {
@@ -68,9 +68,6 @@ func (v *LocalVolume) Write(path string, b []byte, offset int64) (int, error) {
 }
 
 func (v *LocalVolume) Remove(path string) error {
-	if !v.writable {
-		return fmt.Errorf("readonly %s", path)
-	}
 	return os.Remove(path)
 }
 
@@ -83,8 +80,12 @@ func (v *LocalVolume) ReadDir(path string) ([]*File, error) {
 
 	for _, fi := range items {
 		f := &File{
-			FileStat: FileStat{IsDir: fi.IsDir(), Size: fi.Size(),
-				UpdatedTime: fi.ModTime().UnixNano()},
+			FileStat: FileStat{
+				IsDir:       fi.IsDir(),
+				Size:        fi.Size(),
+				UpdatedTime: fi.ModTime().UnixNano(),
+				CreatedTime: GetCTime(fi),
+			},
 			Name: fi.Name(),
 		}
 		files = append(files, f)

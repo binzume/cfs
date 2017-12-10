@@ -143,16 +143,24 @@ func usage() {
 }
 
 func main() {
-	writable := flag.Bool("w", false, "writable")
-	flag.Parse()
-	if flag.Arg(0) == "help" || flag.NArg() == 0 {
+	if len(os.Args) < 2 {
 		usage()
 		return
 	}
-	if flag.Arg(0) == "publish" && flag.NArg() >= 3 {
-		publish(flag.Arg(1), flag.Arg(2), *writable)
-	}
-	if flag.Arg(0) == "mount" && flag.NArg() >= 3 {
-		mount(flag.Arg(1), flag.Arg(2))
+	fs := flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+	writable := fs.Bool("w", false, "writable")
+	fs.Parse(os.Args[2:])
+
+	cmd := os.Args[1]
+	switch {
+	case cmd == "help":
+		usage()
+	case cmd == "publish" && fs.NArg() >= 2:
+		publish(fs.Arg(0), fs.Arg(1), *writable)
+	case cmd == "mount" && fs.NArg() >= 2:
+		mount(fs.Arg(0), fs.Arg(1))
+	default:
+		log.Println("unknown command:", cmd, fs.Args())
+		usage()
 	}
 }
