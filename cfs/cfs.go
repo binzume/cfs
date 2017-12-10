@@ -11,6 +11,10 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+func errorResponse(rid, msg string) *map[string]interface{} {
+	return &map[string]interface{}{"error": msg, "rid": rid}
+}
+
 func fileOperation(v *LocalVolume, conn *websocket.Conn) {
 	for {
 		var op map[string]json.Number
@@ -19,31 +23,35 @@ func fileOperation(v *LocalVolume, conn *websocket.Conn) {
 			return
 		}
 		log.Println("op:", op)
+		rid := op["rid"].String()
 		switch op["op"].String() {
 		case "stat":
 			st, err := v.Stat(op["path"].String())
 			if err != nil {
-				conn.WriteJSON(&map[string]string{"error": "readdir error"})
+				conn.WriteJSON(errorResponse(rid, "readdir error"))
 				continue
 			}
-			conn.WriteJSON(&map[string]interface{}{"stat": st})
+			conn.WriteJSON(&map[string]interface{}{"rid": rid, "stat": st})
 		case "read":
 			l, _ := op["l"].Int64()
 			p, _ := op["p"].Int64()
 			b := make([]byte, l)
 			len, _ := v.Read(op["path"].String(), b, p)
-			conn.WriteMessage(1, b[:len])
+			conn.WriteMessage(websocket.BinaryMessage, b[:len])
 		case "write":
-			conn.WriteJSON(&map[string]string{"error": "notimplemented"})
+			p, _ := op["p"].Int64()
+			b := []byte(op["b"].String())
+			len, _ := v.Write(op["path"].String(), b, p)
+			conn.WriteJSON(&map[string]interface{}{"rid": rid, "l": len})
 		case "files":
 			files, err := v.ReadDir(op["path"].String())
 			if err != nil {
-				conn.WriteJSON(&map[string]string{"error": "readdir error"})
+				conn.WriteJSON(errorResponse(rid, "readdir error"))
 				continue
 			}
-			conn.WriteJSON(&map[string]interface{}{"files": files})
+			conn.WriteJSON(&map[string]interface{}{"rid": rid, "files": files})
 		default:
-			conn.WriteJSON(&map[string]string{"error": "unknown op"})
+			conn.WriteJSON(errorResponse(rid, "unknown operation"))
 		}
 	}
 }
@@ -105,6 +113,7 @@ func mount(volumePath, mountPoint string) {
 	conn.ReadJSON(data) // wait to establish.
 
 	v := NewRemoteVolume(volumePath, conn)
+	v.Start()
 
 	files, err := v.ReadDir("")
 	log.Println("Readdir", files, err)

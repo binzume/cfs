@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"sync"
 
 	"github.com/gorilla/websocket"
@@ -12,12 +13,33 @@ type RemoteVolume struct {
 	Name string
 	lock sync.Mutex
 	conn *websocket.Conn // TODO: multiple conns
+	wch  chan map[string]interface{}
 }
 
 var _ Volume = &RemoteVolume{}
 
 func NewRemoteVolume(name string, conn *websocket.Conn) *RemoteVolume {
-	return &RemoteVolume{Name: name, conn: conn}
+	return &RemoteVolume{Name: name, conn: conn, wch: make(chan map[string]interface{})}
+}
+
+func (v *RemoteVolume) Start() {
+	go func() {
+		for {
+			req := <-v.wch
+			err := v.conn.WriteJSON(req)
+			if err != nil {
+				break
+			}
+		}
+	}()
+	log.Println("terminate volume.")
+}
+
+func (v *RemoteVolume) request(r map[string]interface{}, result interface{}) error {
+	v.wch <- r
+	v.lock.Lock()
+	defer v.lock.Unlock()
+	return v.conn.ReadJSON(&result)
 }
 
 func (v *RemoteVolume) Locker() sync.Locker {
@@ -25,16 +47,10 @@ func (v *RemoteVolume) Locker() sync.Locker {
 }
 
 func (v *RemoteVolume) Stat(path string) (*FileStat, error) {
-	v.lock.Lock()
-	defer v.lock.Unlock()
-	err := v.conn.WriteJSON(map[string]string{"op": "stat", "path": path})
-	if err != nil {
-		return nil, err
-	}
 	var res struct {
 		S *FileStat `json:"stat"`
 	}
-	err = v.conn.ReadJSON(&res)
+	err := v.request(map[string]interface{}{"op": "stat", "path": path}, &res)
 	if err != nil {
 		return nil, err
 	}
@@ -45,12 +61,10 @@ func (v *RemoteVolume) Stat(path string) (*FileStat, error) {
 }
 
 func (v *RemoteVolume) Read(path string, b []byte, offset int64) (int, error) {
+	v.wch <- map[string]interface{}{"op": "read", "path": path, "p": offset, "l": len(b)}
+
 	v.lock.Lock()
 	defer v.lock.Unlock()
-	err := v.conn.WriteJSON(map[string]interface{}{"op": "read", "path": path, "p": offset, "l": len(b)})
-	if err != nil {
-		return 0, err
-	}
 	mt, msg, err := v.conn.ReadMessage()
 	if err != nil {
 		return 0, err
@@ -62,20 +76,19 @@ func (v *RemoteVolume) Read(path string, b []byte, offset int64) (int, error) {
 }
 
 func (v *RemoteVolume) Write(path string, b []byte, offset int64) (int, error) {
-	return 0, fmt.Errorf("not implemented %s", path)
+	var res map[string]interface{}
+	err := v.request(map[string]interface{}{"op": "write", "path": path, "p": offset, "b": string(b)}, &res)
+	if err != nil {
+		return 0, err
+	}
+	return res["l"].(int), nil
 }
 
 func (v *RemoteVolume) ReadDir(path string) ([]*File, error) {
-	v.lock.Lock()
-	defer v.lock.Unlock()
-	err := v.conn.WriteJSON(map[string]string{"op": "files", "path": path})
-	if err != nil {
-		return nil, err
-	}
 	var res struct {
 		Files []*File `json:"files"`
 	}
-	err = v.conn.ReadJSON(&res)
+	err := v.request(map[string]interface{}{"op": "files", "path": path}, &res)
 	if err != nil {
 		return nil, err
 	}
