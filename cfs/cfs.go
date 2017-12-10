@@ -43,6 +43,9 @@ func fileOperation(v *LocalVolume, conn *websocket.Conn) {
 			b := []byte(op["b"].String())
 			len, _ := v.Write(op["path"].String(), b, p)
 			conn.WriteJSON(&map[string]interface{}{"rid": rid, "l": len})
+		case "remove":
+			_ = v.Remove(op["path"].String())
+			conn.WriteJSON(&map[string]interface{}{"rid": rid})
 		case "files":
 			files, err := v.ReadDir(op["path"].String())
 			if err != nil {

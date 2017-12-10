@@ -109,10 +109,11 @@ func (f *baseFile) SetAllocationSize(ctx context.Context, fi *dokan.FileInfo, le
 }
 
 func (f *baseFile) CanDeleteFile(ctx context.Context, fi *dokan.FileInfo) error {
-	return dokan.ErrAccessDenied
+	// return dokan.ErrAccessDenied
+	return nil
 }
 func (f *baseFile) CanDeleteDirectory(ctx context.Context, fi *dokan.FileInfo) error {
-	return dokan.ErrAccessDenied
+	return nil
 }
 
 func (f *baseFile) Cleanup(ctx context.Context, fi *dokan.FileInfo) {
@@ -197,6 +198,12 @@ func (t *fuseDir) ReadFile(ctx context.Context, fi *dokan.FileInfo, bs []byte, o
 
 func (t *fuseDir) WriteFile(ctx context.Context, fi *dokan.FileInfo, bs []byte, offset int64) (int, error) {
 	return t.v.Write(t.path, bs, offset)
+}
+
+func (t *fuseDir) Cleanup(ctx context.Context, fi *dokan.FileInfo) {
+	if fi.IsDeleteOnClose() {
+		t.v.Remove(t.path)
+	}
 }
 
 func fuseMount(v Volume, mountPoint string) {

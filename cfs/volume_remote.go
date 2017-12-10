@@ -84,6 +84,11 @@ func (v *RemoteVolume) Write(path string, b []byte, offset int64) (int, error) {
 	return res["l"], nil
 }
 
+func (v *RemoteVolume) Remove(path string) error {
+	var res map[string]interface{}
+	return v.request(map[string]interface{}{"op": "remove", "path": path}, &res)
+}
+
 func (v *RemoteVolume) ReadDir(path string) ([]*File, error) {
 	var res struct {
 		Files []*File `json:"files"`

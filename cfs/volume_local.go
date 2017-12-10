@@ -67,6 +67,13 @@ func (v *LocalVolume) Write(path string, b []byte, offset int64) (int, error) {
 	return file.WriteAt(b, offset)
 }
 
+func (v *LocalVolume) Remove(path string) error {
+	if !v.writable {
+		return fmt.Errorf("readonly %s", path)
+	}
+	return os.Remove(path)
+}
+
 func (v *LocalVolume) ReadDir(path string) ([]*File, error) {
 	items, err := ioutil.ReadDir(v.localPath(path))
 	if err != nil {

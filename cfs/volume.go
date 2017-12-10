@@ -23,6 +23,7 @@ type Volume interface {
 	ReadDir(path string) ([]*File, error)
 	Read(path string, b []byte, offset int64) (int, error)
 	Write(path string, b []byte, offset int64) (int, error)
+	Remove(path string) error
 	Stat(path string) (*FileStat, error)
 }
 
@@ -62,6 +63,13 @@ func (vg *VolumeGroup) Write(path string, b []byte, offset int64) (int, error) {
 		return v.Write(p, b, offset)
 	}
 	return 0, fmt.Errorf("not supported %s", path)
+}
+
+func (vg *VolumeGroup) Remove(path string) error {
+	if v, p, ok := vg.resolve(path); ok {
+		return v.Remove(p)
+	}
+	return fmt.Errorf("not supported %s", path)
 }
 
 func (vg *VolumeGroup) ReadDir(path string) ([]*File, error) {
