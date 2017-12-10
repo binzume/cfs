@@ -195,16 +195,17 @@ func (t *fuseDir) ReadFile(ctx context.Context, fi *dokan.FileInfo, bs []byte, o
 	return t.v.Read(t.path, bs, offset)
 }
 
-func fuseMount(v Volume, path string) {
-	if len(path) > 2 {
+func fuseMount(v Volume, mountPoint string) {
+	if len(mountPoint) > 2 {
+		// q:hoge/fuga -> q: + hoge/fuga
 		vg := NewVolumeGroup()
-		vg.Add(path[2:], v)
+		vg.Add(mountPoint[2:], v)
 		v = vg
-		path = path[:2]
+		mountPoint = mountPoint[:2]
 	}
 
 	myFileSystem := &fuseFs{root: &fuseDir{v: v}, v: v}
-	mp, err := dokan.Mount(&dokan.Config{FileSystem: myFileSystem, Path: path})
+	mp, err := dokan.Mount(&dokan.Config{FileSystem: myFileSystem, Path: mountPoint})
 	if err != nil {
 		log.Fatal("Mount failed:", err)
 	}
