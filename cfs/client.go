@@ -112,7 +112,7 @@ func Connect(wsurl, user, token string) (*websocket.Conn, error) {
 	}
 
 	wsHeaders := http.Header{
-		"Origin":                   {"http://localhost:8080"},
+		//"Origin":                   {"http://localhost:8080"},
 		"Sec-WebSocket-Extensions": {"permessage-deflate; client_max_window_bits, x-webkit-deflate-frame"},
 	}
 
