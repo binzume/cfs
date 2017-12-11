@@ -3,19 +3,37 @@ package main
 import (
 	"encoding/json"
 	"flag"
-	"fmt"
 	"log"
 	"os"
-	"os/signal"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
+
+var DefaultHubAPI = "http://localhost:8080"
+var DefaultHubToken = "dummysecret"
+
+func hubURL() string {
+	Url := os.Getenv("CFS_HUB_URL")
+	if Url == "" {
+		Url = DefaultHubAPI
+	}
+	return Url
+}
+
+func hubToken() string {
+	Token := os.Getenv("CFS_HUB_TOKEN")
+	if Token == "" {
+		Token = DefaultHubToken
+	}
+	return Token
+}
 
 func errorResponse(rid, msg string) *map[string]interface{} {
 	return &map[string]interface{}{"error": msg, "rid": rid}
 }
 
-func fileOperation(v *LocalVolume, conn *websocket.Conn) {
+func fileOperation(v Volume, conn *websocket.Conn) {
 	for {
 		var op map[string]json.Number
 		err := conn.ReadJSON(&op)
@@ -59,7 +77,7 @@ func fileOperation(v *LocalVolume, conn *websocket.Conn) {
 	}
 }
 
-func onConnect(v *LocalVolume, conn *websocket.Conn, target string) {
+func onConnect(v Volume, conn *websocket.Conn, target string) {
 	log.Println("connect", target)
 	var event map[string]string
 	if target == "file" {
@@ -74,19 +92,19 @@ func onConnect(v *LocalVolume, conn *websocket.Conn, target string) {
 	log.Println("disconnect")
 }
 
-func publish(localPath, volumePath string, writable bool) {
-	fmt.Println("publish ", localPath, " to ", volumePath)
+func publish(localPath, volumePath string, writable bool) error {
+	log.Println("publish ", localPath, " to ", volumePath)
 
-	v := NewLocalVolume(localPath, volumePath, writable)
-
-	// proxy mode
-	wsConn, err := ConnectVolume(volumePath, "dummysecret")
+	wsConn, err := ConnectVolume(volumePath, hubToken())
 	if err != nil {
-		log.Fatalln(err)
+		log.Println(err)
+		return err
 	}
 	defer wsConn.Close()
 	finish := make(chan int)
 	wsConn.WriteJSON(&map[string]string{"action": "volume", "name": "fuga", "url": "ws://localhost:8080/"})
+
+	v := NewLocalVolume(localPath, volumePath, writable)
 
 	go func() {
 		// listen loop
@@ -94,6 +112,7 @@ func publish(localPath, volumePath string, writable bool) {
 			var event map[string]string
 			err := wsConn.ReadJSON(&event)
 			if err != nil {
+				log.Println("read error: ", err)
 				break
 			}
 			log.Println(event)
@@ -104,36 +123,29 @@ func publish(localPath, volumePath string, writable bool) {
 		}
 		finish <- 1
 	}()
-	fmt.Println("wait...")
+
+	log.Println("wait...")
 	<-finish
-	fmt.Println("finished.")
+	log.Println("finished.")
+	return nil
 }
 
-func mount(volumePath, mountPoint string) {
+func mount(volumePath, mountPoint string) error {
+	log.Println("mount ", volumePath, " to ", mountPoint)
+
 	conn, err := ConnectViaPloxy(volumePath, "")
 	if err != nil {
 		log.Println(err)
+		return err
 	}
-	var data = map[string]string{}
-	conn.ReadJSON(data) // wait to establish.
+	defer conn.Close()
 
 	v := NewRemoteVolume(volumePath, conn)
 	v.Start()
 
-	files, err := v.ReadDir("")
-	log.Println("Readdir", files, err)
-
 	fuseMount(v, mountPoint)
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt)
-	<-c
-}
-
-func mount0(volumePath, mountPoint string) {
-	fuseMount(nil, mountPoint)
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt)
-	<-c
+	log.Println("finished.")
+	return nil
 }
 
 func usage() {
@@ -155,6 +167,12 @@ func main() {
 	switch {
 	case cmd == "help":
 		usage()
+	case cmd == "publish" && fs.NArg() >= 3:
+		for {
+			// TODO: fix retry loop
+			publish(fs.Arg(0), fs.Arg(1), *writable)
+			time.Sleep(time.Second * 5)
+		}
 	case cmd == "publish" && fs.NArg() >= 2:
 		publish(fs.Arg(0), fs.Arg(1), *writable)
 	case cmd == "mount" && fs.NArg() >= 2:

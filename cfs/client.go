@@ -7,28 +7,22 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/gorilla/websocket"
 )
 
-var DefaultHubAPI = "http://localhost:8080"
-
 type UrlResponse struct {
 	WsUrl      string `json:"ws_url"`
 	ProxyWsUrl string `json:"proxy_ws_url"`
+	Error      string `json:"error"`
 }
 
 func GetVolumeWebsocketURL(volumePath, token string) (string, error) {
 	client := &http.Client{Timeout: time.Duration(10) * time.Second}
-	HubURL := os.Getenv("CFSHUB_URL")
-	if HubURL == "" {
-		HubURL = DefaultHubAPI
-	}
 
-	req, err := http.NewRequest("POST", HubURL+"/volumes/"+volumePath, nil)
+	req, err := http.NewRequest("POST", hubURL()+"/volumes/"+volumePath, nil)
 	if err != nil {
 		return "", err
 	}
@@ -47,18 +41,17 @@ func GetVolumeWebsocketURL(volumePath, token string) (string, error) {
 
 	var result UrlResponse
 	json.Unmarshal(b, &result)
+	if result.Error != "" || result.WsUrl == "" {
+		return "", fmt.Errorf("Error: %s", result.Error)
+	}
 
 	return result.WsUrl, nil
 }
 
 func GetProxyWsURL(volumePath, token string) (string, error) {
 	client := &http.Client{Timeout: time.Duration(10) * time.Second}
-	HubURL := os.Getenv("CFSHUB_URL")
-	if HubURL == "" {
-		HubURL = DefaultHubAPI
-	}
 
-	req, err := http.NewRequest("GET", HubURL+"/volumes/"+volumePath, nil)
+	req, err := http.NewRequest("GET", hubURL()+"/volumes/"+volumePath, nil)
 	if err != nil {
 		return "", err
 	}
@@ -77,6 +70,9 @@ func GetProxyWsURL(volumePath, token string) (string, error) {
 
 	var result UrlResponse
 	json.Unmarshal(b, &result)
+	if result.Error != "" || result.WsUrl == "" {
+		return "", fmt.Errorf("Error: %s", result.Error)
+	}
 
 	return result.ProxyWsUrl, nil
 }

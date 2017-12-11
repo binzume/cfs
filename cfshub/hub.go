@@ -9,11 +9,22 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
+	"os"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 )
+
+var DefaultHubToken = "dummysecret"
+
+func hubToken() string {
+	Token := os.Getenv("CFS_HUB_TOKEN")
+	if Token == "" {
+		Token = DefaultHubToken
+	}
+	return Token
+}
 
 // Active volume
 type Volume struct {
@@ -192,7 +203,7 @@ func volumeWsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		log.Println(data)
 		if data["action"] == "auth" {
-			if data["token"] == "dummysecret" {
+			if data["token"] == hubToken() {
 				user = data["user"]
 				conn.WriteJSON(&map[string]string{"action": "response", "status": "ok"})
 			} else {
@@ -226,6 +237,13 @@ func parseIntDefault(str string, defvalue int) int {
 	return int(v)
 }
 
+func baseWsUrl(r *http.Request) string {
+	if r.TLS == nil {
+		return "ws://" + r.Host
+	}
+	return "wss://" + r.Host
+}
+
 func initHttpd() *gin.Engine {
 	r := gin.Default()
 
@@ -241,7 +259,7 @@ func initHttpd() *gin.Engine {
 	r.POST("/volumes/:u/:v", func(c *gin.Context) {
 		// TODO auth
 		vpath := c.Param("u") + "/" + c.Param("v")
-		wsurl := fmt.Sprintf("ws://%s/volumes/%s/ws", c.Request.Host, vpath)
+		wsurl := fmt.Sprintf("%s/volumes/%s/ws", baseWsUrl(c.Request), vpath)
 		c.JSON(200, gin.H{"ws_url": wsurl})
 	})
 
@@ -250,7 +268,7 @@ func initHttpd() *gin.Engine {
 		log.Println(volumes)
 		if v, ok := volumes[vpath]; ok {
 			// TODO: if v.DisableProxy ...
-			proxyWsURL := fmt.Sprintf("ws://%s/volumes/%s/proxy/new", c.Request.Host, vpath)
+			proxyWsURL := fmt.Sprintf("%s/volumes/%s/proxy/new", baseWsUrl(c.Request), vpath)
 			c.JSON(200, gin.H{"ws_url": v.ConnectURL, "proxy_ws_url": proxyWsURL})
 		} else {
 			c.JSON(404, gin.H{"error": "notfound " + vpath})
