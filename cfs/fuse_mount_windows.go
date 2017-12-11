@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
 	"strings"
@@ -9,12 +10,12 @@ import (
 	"github.com/keybase/dokan-go"
 	"github.com/keybase/kbfs/dokan/winacl"
 
-	"context"
+	"./volume"
 )
 
 // FileSystem
 type fuseFs struct {
-	v Volume
+	v volume.Volume
 }
 
 func (fs *fuseFs) WithContext(ctx context.Context) (context.Context, context.CancelFunc) {
@@ -137,8 +138,8 @@ var _ dokan.File = &baseFile{}
 type fuseDir struct {
 	baseFile
 	path string
-	v    Volume
-	st   *FileStat
+	v    volume.Volume
+	st   *volume.FileStat
 }
 
 type FilesResponse struct {
@@ -212,11 +213,11 @@ func (t *fuseDir) Cleanup(ctx context.Context, fi *dokan.FileInfo) {
 }
 
 // TODO: nonblocking
-func fuseMount(v Volume, mountPoint string) {
+func fuseMount(v volume.Volume, mountPoint string) {
 	_, err := os.Stat(mountPoint)
 	if len(mountPoint) > 2 && (err != nil && os.IsNotExist(err)) {
 		// q:hoge/fuga -> q: + hoge/fuga
-		vg := NewVolumeGroup()
+		vg := volume.NewVolumeGroup()
 		vg.Add(mountPoint[2:], v)
 		v = vg
 		mountPoint = mountPoint[:2]
