@@ -25,6 +25,7 @@ type Volume interface {
 	Write(path string, b []byte, offset int64) (int, error)
 	Remove(path string) error
 	Stat(path string) (*FileStat, error)
+	Available() bool
 }
 
 type VolumeGroup struct {
@@ -91,8 +92,15 @@ func (vg *VolumeGroup) ReadDir(path string) ([]*File, error) {
 	return files, nil
 }
 
+func (vg *VolumeGroup) Available() bool {
+	return true
+}
+
 func (vg *VolumeGroup) resolve(path string) (Volume, string, bool) {
 	for p, v := range vg.vv {
+		if !v.Available() {
+			continue
+		}
 		if p == path {
 			return v, "", true
 		}

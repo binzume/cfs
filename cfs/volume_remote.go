@@ -16,6 +16,7 @@ type RemoteVolume struct {
 	conn      *websocket.Conn // TODO: multiple conns
 	wch       chan map[string]interface{}
 	statCache map[string]*statCache
+	connected bool
 }
 
 type statCache struct {
@@ -36,7 +37,14 @@ func NewRemoteVolume(name string, conn *websocket.Conn) *RemoteVolume {
 }
 
 func (v *RemoteVolume) Start() {
+	var data = map[string]string{}
+	v.conn.ReadJSON(data) // wait to establish.
+
+	log.Println("start volume.", v.Name)
+
+	v.connected = true
 	go func() {
+		defer v.Terminate()
 		for {
 			req := <-v.wch
 			err := v.conn.WriteJSON(req)
@@ -45,10 +53,16 @@ func (v *RemoteVolume) Start() {
 			}
 		}
 	}()
-	log.Println("terminate volume.")
+}
+func (v *RemoteVolume) Terminate() {
+	v.connected = false
+	log.Println("terminate volume.", v.Name)
 }
 
 func (v *RemoteVolume) request(r map[string]interface{}, result interface{}) error {
+	if !v.connected {
+		return fmt.Errorf("connection closed")
+	}
 	v.wch <- r
 	v.lock.Lock()
 	defer v.lock.Unlock()
@@ -123,4 +137,8 @@ func (v *RemoteVolume) ReadDir(path string) ([]*File, error) {
 		v.statCache[path+"/"+f.Name] = &statCache{stat: &f.FileStat, time: time.Now()}
 	}
 	return res.Files, nil
+}
+
+func (v *RemoteVolume) Available() bool {
+	return v.connected
 }

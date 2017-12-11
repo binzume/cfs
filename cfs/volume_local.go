@@ -93,3 +93,7 @@ func (v *LocalVolume) ReadDir(path string) ([]*File, error) {
 
 	return files, nil
 }
+
+func (vg *LocalVolume) Available() bool {
+	return true
+}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"os"
 	"strings"
 	"time"
 
@@ -210,8 +211,10 @@ func (t *fuseDir) Cleanup(ctx context.Context, fi *dokan.FileInfo) {
 	}
 }
 
+// TODO: nonblocking
 func fuseMount(v Volume, mountPoint string) {
-	if len(mountPoint) > 2 {
+	_, err := os.Stat(mountPoint)
+	if len(mountPoint) > 2 && (err != nil && os.IsNotExist(err)) {
 		// q:hoge/fuga -> q: + hoge/fuga
 		vg := NewVolumeGroup()
 		vg.Add(mountPoint[2:], v)
