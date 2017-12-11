@@ -15,13 +15,39 @@ type RemoteVolume struct {
 	lock      sync.Mutex
 	conn      *websocket.Conn // TODO: multiple conns
 	wch       chan map[string]interface{}
-	statCache map[string]*statCache
+	statCache statCache
 	connected bool
 }
 
 type statCache struct {
+	c    map[string]*statCacheE
+	lock sync.Mutex
+}
+type statCacheE struct {
 	stat *FileStat
 	time time.Time
+}
+
+func (c *statCache) set(path string, stat *FileStat) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	c.c[path] = &statCacheE{stat: stat, time: time.Now()}
+}
+func (c *statCache) get(path string) *FileStat {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	if s, ok := c.c[path]; ok {
+		if s.time.Add(statCacheExpireTime).After(time.Now()) {
+			return s.stat
+		}
+		delete(c.c, path)
+	}
+	return nil
+}
+func (c *statCache) delete(path string) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	delete(c.c, path)
 }
 
 var _ Volume = &RemoteVolume{}
@@ -32,7 +58,7 @@ func NewRemoteVolume(name string, conn *websocket.Conn) *RemoteVolume {
 		Name:      name,
 		conn:      conn,
 		wch:       make(chan map[string]interface{}),
-		statCache: make(map[string]*statCache),
+		statCache: statCache{c: map[string]*statCacheE{}},
 	}
 }
 
@@ -74,11 +100,8 @@ func (v *RemoteVolume) Locker() sync.Locker {
 }
 
 func (v *RemoteVolume) Stat(path string) (*FileStat, error) {
-	if s, ok := v.statCache[path]; ok {
-		if s.time.Add(statCacheExpireTime).After(time.Now()) {
-			return s.stat, nil
-			delete(v.statCache, path)
-		}
+	if s := v.statCache.get(path); s != nil {
+		return s, nil
 	}
 	var res struct {
 		S *FileStat `json:"stat"`
@@ -90,7 +113,7 @@ func (v *RemoteVolume) Stat(path string) (*FileStat, error) {
 	if res.S == nil {
 		return nil, fmt.Errorf("invalid response")
 	}
-	v.statCache[path] = &statCache{stat: res.S, time: time.Now()}
+	v.statCache.set(path, res.S)
 	return res.S, nil
 }
 
@@ -115,13 +138,13 @@ func (v *RemoteVolume) Write(path string, b []byte, offset int64) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	delete(v.statCache, path)
+	v.statCache.delete(path)
 	return res["l"], nil
 }
 
 func (v *RemoteVolume) Remove(path string) error {
 	var res map[string]interface{}
-	delete(v.statCache, path)
+	v.statCache.delete(path)
 	return v.request(map[string]interface{}{"op": "remove", "path": path}, &res)
 }
 
@@ -134,7 +157,7 @@ func (v *RemoteVolume) ReadDir(path string) ([]*File, error) {
 		return nil, err
 	}
 	for _, f := range res.Files {
-		v.statCache[path+"/"+f.Name] = &statCache{stat: &f.FileStat, time: time.Now()}
+		v.statCache.set(path+"/"+f.Name, &f.FileStat)
 	}
 	return res.Files, nil
 }
