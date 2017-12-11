@@ -20,12 +20,15 @@ cfs mount user/volume mountpoint
 
 ### 設定(未実装)
 
-```console
-cfs config hub http://example.com:8080
-cfs config token TOKENSTRING1234567890
+以下の環境変数で設定.
+
+```
+set CFS_HUB_URL="http://example.com:8080"
+set CFS_HUB_TOKEN="dummy"
 ```
 
-サーバの起動
+
+### サーバの起動
 
 ```console
 cfshub -p 8080
