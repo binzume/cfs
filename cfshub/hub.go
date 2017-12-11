@@ -156,32 +156,25 @@ func (c *ProxyConnection) Join(conn2 *websocket.Conn) {
 	}()
 }
 
-func AttachProxyConnection(v *Volume, id string, conn *websocket.Conn, wsurl string) chan int {
-	if c, ok := connections[id]; ok {
-		c.Join(conn)
-		return c.wait
-	}
-	log.Println("request connect1", wsurl)
-	c := CreateProxyConnection(id, conn)
-
-	v.event <- &volumeEvent{"connect", &Client{}, wsurl}
-	log.Println("request connect", wsurl)
-
-	return c.wait
-}
-
 func proxyWsHandler(v *Volume, cid string, w http.ResponseWriter, r *http.Request) {
 	conn, err := wsupgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return
 	}
-	wsurl := ""
 	if cid == "new" {
 		cid = strconv.FormatUint(rand.Uint64(), 36)
-		wsurl = fmt.Sprintf("ws://%s/volumes/%s/proxy/%s", r.Host, v.Path(), cid)
+		c := CreateProxyConnection(cid, conn)
+
+		wsurl := fmt.Sprintf("ws://%s/volumes/%s/proxy/%s", r.Host, v.Path(), cid)
+		v.event <- &volumeEvent{"connect", &Client{}, wsurl}
+		log.Println("request connect", wsurl)
+		<-c.wait
+	} else {
+		if c, ok := connections[cid]; ok {
+			c.Join(conn)
+			<-c.wait
+		}
 	}
-	wait := AttachProxyConnection(v, cid, conn, wsurl)
-	<-wait
 }
 
 func volumeWsHandler(w http.ResponseWriter, r *http.Request) {
@@ -237,11 +230,11 @@ func parseIntDefault(str string, defvalue int) int {
 	return int(v)
 }
 
-func baseWsUrl(r *http.Request) string {
-	if r.TLS == nil {
-		return "ws://" + r.Host
+func wsUrl(r *http.Request, path string) string {
+	if r.TLS == nil && r.Header.Get("X-Forwarded-Proto") != "https" {
+		return "ws://" + r.Host + path
 	}
-	return "wss://" + r.Host
+	return "wss://" + r.Host + path
 }
 
 func initHttpd() *gin.Engine {
@@ -259,7 +252,7 @@ func initHttpd() *gin.Engine {
 	r.POST("/volumes/:u/:v", func(c *gin.Context) {
 		// TODO auth
 		vpath := c.Param("u") + "/" + c.Param("v")
-		wsurl := fmt.Sprintf("%s/volumes/%s/ws", baseWsUrl(c.Request), vpath)
+		wsurl := wsUrl(c.Request, "/volumes/"+vpath+"/ws")
 		c.JSON(200, gin.H{"ws_url": wsurl})
 	})
 
@@ -268,7 +261,7 @@ func initHttpd() *gin.Engine {
 		log.Println(volumes)
 		if v, ok := volumes[vpath]; ok {
 			// TODO: if v.DisableProxy ...
-			proxyWsURL := fmt.Sprintf("%s/volumes/%s/proxy/new", baseWsUrl(c.Request), vpath)
+			proxyWsURL := wsUrl(c.Request, "/volumes/"+vpath+"/proxy/new")
 			c.JSON(200, gin.H{"ws_url": v.ConnectURL, "proxy_ws_url": proxyWsURL})
 		} else {
 			c.JSON(404, gin.H{"error": "notfound " + vpath})
