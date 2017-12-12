@@ -212,8 +212,7 @@ func (t *fuseDir) Cleanup(ctx context.Context, fi *dokan.FileInfo) {
 	}
 }
 
-// TODO: nonblocking
-func fuseMount(v volume.Volume, mountPoint string) {
+func fuseMount(v volume.Volume, mountPoint string) chan error {
 	_, err := os.Stat(mountPoint)
 	if len(mountPoint) > 2 && (err != nil && os.IsNotExist(err)) {
 		// q:hoge/fuga -> q: + hoge/fuga
@@ -223,13 +222,16 @@ func fuseMount(v volume.Volume, mountPoint string) {
 		mountPoint = mountPoint[:2]
 	}
 
-	myFileSystem := &fuseFs{v: v}
-	mp, err := dokan.Mount(&dokan.Config{FileSystem: myFileSystem, Path: mountPoint})
-	if err != nil {
-		log.Fatal("Mount failed:", err)
-	}
-	err = mp.BlockTillDone()
-	if err != nil {
-		log.Println("Filesystem exit:", err)
-	}
+	errorch := make(chan error)
+	go func() {
+		myFileSystem := &fuseFs{v: v}
+		mp, err := dokan.Mount(&dokan.Config{FileSystem: myFileSystem, Path: mountPoint})
+		if err != nil {
+			errorch <- err
+			log.Fatal("Mount failed:", err)
+		}
+		err = mp.BlockTillDone()
+		errorch <- err
+	}()
+	return errorch
 }

@@ -29,20 +29,28 @@ type Volume interface {
 }
 
 type VolumeGroup struct {
-	vv   map[string]Volume
+	vv   []volumeGroupEntry
 	lock sync.Mutex
 }
 
+type volumeGroupEntry struct {
+	p string
+	v Volume
+}
+
+// NewVolumeGroup returns empty volume.
 func NewVolumeGroup() *VolumeGroup {
-	return &VolumeGroup{vv: make(map[string]Volume)}
+	return &VolumeGroup{}
+}
+
+func (vg *VolumeGroup) Add(path string, v Volume) {
+	vg.lock.Lock()
+	defer vg.lock.Unlock()
+	vg.vv = append(vg.vv, volumeGroupEntry{path, v})
 }
 
 func (v *VolumeGroup) Locker() sync.Locker {
 	return &v.lock
-}
-
-func (vg *VolumeGroup) Add(path string, v Volume) {
-	vg.vv[path] = v
 }
 
 func (vg *VolumeGroup) Stat(path string) (*FileStat, error) {
@@ -74,7 +82,7 @@ func (vg *VolumeGroup) Remove(path string) error {
 }
 
 func (vg *VolumeGroup) ReadDir(path string) ([]*File, error) {
-	files := []*File{}
+	files := []*File{} // TODO uniq.
 
 	if v, p, ok := vg.resolve(path); ok {
 		files, _ = v.ReadDir(p)
@@ -83,9 +91,9 @@ func (vg *VolumeGroup) ReadDir(path string) ([]*File, error) {
 	if path != "" {
 		path += "/"
 	}
-	for p := range vg.vv {
-		if strings.HasPrefix(p, path) {
-			n := strings.Split(p[len(path):], "/")[0]
+	for _, e := range vg.vv {
+		if e.v.Available() && strings.HasPrefix(e.p, path) {
+			n := strings.Split(e.p[len(path):], "/")[0]
 			files = append(files, &File{FileStat: FileStat{IsDir: true}, Name: n})
 		}
 	}
@@ -97,15 +105,15 @@ func (vg *VolumeGroup) Available() bool {
 }
 
 func (vg *VolumeGroup) resolve(path string) (Volume, string, bool) {
-	for p, v := range vg.vv {
-		if !v.Available() {
+	for _, e := range vg.vv {
+		if !e.v.Available() {
 			continue
 		}
-		if p == path {
-			return v, "", true
+		if e.p == path {
+			return e.v, "", true
 		}
-		if strings.HasPrefix(path, p+"/") {
-			return v, path[len(p)+1:], true
+		if strings.HasPrefix(path, e.p+"/") {
+			return e.v, path[len(e.p)+1:], true
 		}
 	}
 	return nil, "", false

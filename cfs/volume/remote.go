@@ -13,6 +13,7 @@ import (
 type RemoteVolume struct {
 	Name      string
 	lock      sync.Mutex
+	connector websocketConnector
 	conn      *websocket.Conn // TODO: multiple conns
 	wch       chan map[string]interface{}
 	statCache statCache
@@ -27,6 +28,21 @@ type statCacheE struct {
 	stat *FileStat
 	time time.Time
 }
+
+type websocketConnector func(*RemoteVolume) (*websocket.Conn, error)
+
+// NewRemoteVolume returns a new volume.
+func NewRemoteVolume(name string, conn websocketConnector) *RemoteVolume {
+	return &RemoteVolume{
+		Name:      name,
+		connector: conn,
+		wch:       make(chan map[string]interface{}),
+		statCache: statCache{c: map[string]*statCacheE{}},
+	}
+}
+
+var _ Volume = &RemoteVolume{}
+var statCacheExpireTime = time.Second * 5
 
 func (c *statCache) set(path string, stat *FileStat) {
 	c.lock.Lock()
@@ -50,20 +66,18 @@ func (c *statCache) delete(path string) {
 	delete(c.c, path)
 }
 
-var _ Volume = &RemoteVolume{}
-var statCacheExpireTime = time.Second * 5
+func (v *RemoteVolume) Start() (chan error, error) {
+	v.lock.Lock()
+	defer v.lock.Unlock()
+	errorch := make(chan error)
 
-func NewRemoteVolume(name string, conn *websocket.Conn) *RemoteVolume {
-	return &RemoteVolume{
-		Name:      name,
-		conn:      conn,
-		wch:       make(chan map[string]interface{}),
-		statCache: statCache{c: map[string]*statCacheE{}},
-	}
-}
-
-func (v *RemoteVolume) Start() {
 	var data = map[string]string{}
+	conn, err := v.connector(v)
+	if err != nil {
+		log.Println("failed to connect: ", err)
+		return errorch, err
+	}
+	v.conn = conn
 	v.conn.ReadJSON(data) // wait to establish.
 
 	log.Println("start volume.", v.Name)
@@ -75,13 +89,23 @@ func (v *RemoteVolume) Start() {
 			req := <-v.wch
 			err := v.conn.WriteJSON(req)
 			if err != nil {
+				errorch <- err
 				break
 			}
 		}
 	}()
+	return errorch, nil
 }
+
 func (v *RemoteVolume) Terminate() {
+	v.lock.Lock()
+	defer v.lock.Unlock()
+
 	v.connected = false
+	if v.conn != nil {
+		v.conn.Close()
+		v.conn = nil
+	}
 	log.Println("terminate volume.", v.Name)
 }
 

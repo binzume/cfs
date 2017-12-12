@@ -4,28 +4,37 @@ import (
 	"flag"
 	"log"
 	"os"
+	"strings"
 	"time"
+
+	"github.com/gorilla/websocket"
 
 	"./volume"
 )
 
-var DefaultHubAPI = "http://localhost:8080"
-var DefaultHubToken = "dummysecret"
+var defaultHubAPI = "http://localhost:8080"
+var defaultHubToken = "dummysecret"
 
 func hubURL() string {
-	Url := os.Getenv("CFS_HUB_URL")
-	if Url == "" {
-		Url = DefaultHubAPI
+	url := os.Getenv("CFS_HUB_URL")
+	if url == "" {
+		url = defaultHubAPI
 	}
-	return Url
+	return url
 }
 
 func hubToken() string {
-	Token := os.Getenv("CFS_HUB_TOKEN")
-	if Token == "" {
-		Token = DefaultHubToken
+	token := os.Getenv("CFS_HUB_TOKEN")
+	if token == "" {
+		token = defaultHubToken
 	}
-	return Token
+	return token
+}
+
+func usage() {
+	log.Printf("usage: cs help [command]")
+	log.Printf("       cs publish local user/volume")
+	log.Printf("       cs mount user/volume mountpoint")
 }
 
 func publish(localPath, volumePath string, writable bool) error {
@@ -37,8 +46,8 @@ func publish(localPath, volumePath string, writable bool) error {
 		return err
 	}
 	defer hubConn.Close()
-	finish := make(chan int)
-	hubConn.WriteJSON(&map[string]string{"action": "volume", "name": "fuga", "url": "ws://localhost:8080/"})
+	finish := make(chan error)
+	hubConn.WriteJSON(&map[string]string{"action": "volume", "name": strings.SplitN(volumePath, "/", 2)[1], "url": "ws://localhost:8080/"})
 
 	v := volume.NewLocalVolume(localPath, volumePath, writable)
 
@@ -49,15 +58,18 @@ func publish(localPath, volumePath string, writable bool) error {
 			err := hubConn.ReadJSON(&event)
 			if err != nil {
 				log.Println("read error: ", err)
-				break
+				finish <- err
+				return
 			}
 			log.Println(event)
 			if event["action"] == "connect" {
-				newConn, _ := Connect(event["ws_url"], "", "") // TODO
-				go volume.ConnectClient(v, newConn, event["target"])
+				newConn, err := Connect(event["ws_url"], "", "") // TODO
+				if err == nil {
+					go volume.ConnectClient(v, newConn, event["target"])
+				}
 			}
 		}
-		finish <- 1
+		finish <- nil
 	}()
 
 	log.Println("wait...")
@@ -69,25 +81,28 @@ func publish(localPath, volumePath string, writable bool) error {
 func mount(volumePath, mountPoint string) error {
 	log.Println("mount ", volumePath, " to ", mountPoint)
 
-	conn, err := ConnectViaPloxy(volumePath, "")
+	connector := func(v *volume.RemoteVolume) (*websocket.Conn, error) {
+		return ConnectViaPloxy(v.Name, hubToken())
+	}
+
+	v := volume.NewRemoteVolume(volumePath, connector)
+	volumeExit, err := v.Start()
 	if err != nil {
-		log.Println(err)
+		log.Println("connect error: ", err)
 		return err
 	}
-	defer conn.Close()
+	defer v.Terminate()
 
-	v := volume.NewRemoteVolume(volumePath, conn)
-	v.Start()
+	mountErr := fuseMount(v, mountPoint)
 
-	fuseMount(v, mountPoint)
+	select {
+	case err = <-volumeExit:
+		log.Println("disconnected: ", err)
+	case err = <-mountErr:
+		log.Println("unmoount: ", err)
+	}
 	log.Println("finished.")
 	return nil
-}
-
-func usage() {
-	log.Printf("usage: cs help [command]")
-	log.Printf("       cs publish local user/volume")
-	log.Printf("       cs mount user/volume mountpoint")
 }
 
 func main() {
