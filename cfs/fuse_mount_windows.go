@@ -212,7 +212,7 @@ func (t *fuseDir) Cleanup(ctx context.Context, fi *dokan.FileInfo) {
 	}
 }
 
-func fuseMount(v volume.Volume, mountPoint string) chan error {
+func fuseMount(v volume.Volume, mountPoint string) <-chan error {
 	_, err := os.Stat(mountPoint)
 	if len(mountPoint) > 2 && (err != nil && os.IsNotExist(err)) {
 		// q:hoge/fuga -> q: + hoge/fuga
