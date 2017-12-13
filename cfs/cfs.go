@@ -9,6 +9,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"./fs"
 	"./volume"
 )
 
@@ -93,8 +94,9 @@ func mount(volumePath, mountPoint string) error {
 	}
 	defer v.Terminate()
 
-	mountErr := fuseMount(v, mountPoint)
+	mountErr := fs.MountVolume(v, mountPoint)
 
+	log.Println("started.", err)
 	select {
 	case err = <-volumeExit:
 		log.Println("disconnected: ", err)

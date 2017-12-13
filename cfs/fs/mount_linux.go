@@ -1,9 +1,9 @@
-package main
+package fs
 
 import (
 	"log"
 
-	"./volume"
+	"../volume"
 
 	"github.com/hanwen/go-fuse/fuse"
 	"github.com/hanwen/go-fuse/fuse/nodefs"
@@ -87,7 +87,7 @@ func (f *fuseFile) Write(data []byte, off int64) (uint32, fuse.Status) {
 	return uint32(len), fuse.OK
 }
 
-func fuseMount(v volume.Volume, mountPoint string) <-chan error {
+func MountVolume(v volume.Volume, mountPoint string) <-chan error {
 
 	nfs := pathfs.NewPathNodeFs(&fuseFs{FileSystem: pathfs.NewDefaultFileSystem(), v: v}, nil)
 	server, _, err := nodefs.MountRoot(mountPoint, nfs.Root(), nil)
