@@ -17,6 +17,13 @@ type fuseFs struct {
 	v volume.Volume
 }
 
+type fuseFile struct {
+	nodefs.File
+	path  string
+	v     volume.Volume
+	fstat *volume.FileStat
+}
+
 func (t *fuseFs) GetAttr(name string, context *fuse.Context) (*fuse.Attr, fuse.Status) {
 	f, err := t.v.Stat(name)
 	if err != nil {
@@ -29,7 +36,11 @@ func (t *fuseFs) GetAttr(name string, context *fuse.Context) (*fuse.Attr, fuse.S
 		}, fuse.OK
 	}
 	return &fuse.Attr{
-		Mode: fuse.S_IFREG | 0644, Size: uint64(f.Size),
+		Mode:  fuse.S_IFREG | 0644,
+		Size:  uint64(f.Size),
+		Ctime: uint64(f.CreatedTime),
+		Mtime: uint64(f.UpdatedTime),
+		Atime: uint64(f.UpdatedTime),
 	}, fuse.OK
 }
 
@@ -56,8 +67,24 @@ func (t *fuseFs) Open(name string, flags uint32, context *fuse.Context) (file no
 		return nil, fuse.EPERM
 	}
 
-	b := make([]byte, f.Size)
-	return nodefs.NewDataFile(b), fuse.OK
+	return &fuseFile{File: nodefs.NewDefaultFile(), fstat: f, v: t.v, path: name}, fuse.OK
+}
+
+func (f *fuseFile) Read(buf []byte, off int64) (fuse.ReadResult, fuse.Status) {
+	len, err := f.v.Read(f.path, buf, off)
+	if err != nil {
+		return nil, fuse.ENOSYS
+	}
+
+	return fuse.ReadResultData(buf[:len]), fuse.OK
+}
+
+func (f *fuseFile) Write(data []byte, off int64) (uint32, fuse.Status) {
+	len, err := f.v.Write(f.path, data, off)
+	if err != nil {
+		return 0, fuse.ENOSYS
+	}
+	return uint32(len), fuse.OK
 }
 
 func fuseMount(v volume.Volume, mountPoint string) <-chan error {
