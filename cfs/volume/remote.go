@@ -66,18 +66,19 @@ func (c *statCache) delete(path string) {
 	delete(c.c, path)
 }
 
-func (v *RemoteVolume) Start() (chan error, error) {
+// Start volume backend.
+func (v *RemoteVolume) Start() (<-chan error, error) {
 	v.lock.Lock()
 	defer v.lock.Unlock()
 	errorch := make(chan error)
 
-	var data = map[string]string{}
 	conn, err := v.connector(v)
 	if err != nil {
 		log.Println("failed to connect: ", err)
 		return errorch, err
 	}
 	v.conn = conn
+	var data = map[string]string{}
 	v.conn.ReadJSON(data) // wait to establish.
 
 	log.Println("start volume.", v.Name)
@@ -97,6 +98,7 @@ func (v *RemoteVolume) Start() (chan error, error) {
 	return errorch, nil
 }
 
+// Stop volume backend.
 func (v *RemoteVolume) Terminate() {
 	v.lock.Lock()
 	defer v.lock.Unlock()

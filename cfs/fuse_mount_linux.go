@@ -67,6 +67,6 @@ func fuseMount(v volume.Volume, mountPoint string) <-chan error {
 	if err != nil {
 		log.Fatalf("Mount fail: %v\n", err)
 	}
-	server.Serve()
+	go server.Serve()
 	return make(chan error)
 }
