@@ -165,7 +165,7 @@ func proxyWsHandler(v *Volume, cid string, w http.ResponseWriter, r *http.Reques
 		cid = strconv.FormatUint(rand.Uint64(), 36)
 		c := CreateProxyConnection(cid, conn)
 
-		wsurl := fmt.Sprintf("ws://%s/volumes/%s/proxy/%s", r.Host, v.Path(), cid)
+		wsurl := wsUrl(r, "/volumes/"+v.Path()+"/proxy/"+cid) // TODO always wss if available.
 		v.event <- &volumeEvent{"connect", &Client{}, wsurl}
 		log.Println("request connect", wsurl)
 		<-c.wait
