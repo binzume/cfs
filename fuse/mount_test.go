@@ -1,0 +1,37 @@
+package fuse
+
+import (
+	"io/ioutil"
+	"testing"
+	"time"
+
+	"../volume"
+)
+
+func TestMount(t *testing.T) {
+	var vol volume.Volume = volume.NewOnMemoryVolume(map[string][]byte{
+		"hello.txt": []byte("Hello"),
+		"hoge.txt":  []byte("World"),
+	})
+
+	go func() {
+		err := <-MountVolume(vol, "X:")
+
+		if err != nil {
+			t.Errorf("error: %v", err)
+		}
+	}()
+
+	time.Sleep(2 * time.Second)
+
+	data, err := ioutil.ReadFile("X:/hello.txt")
+	if err != nil {
+		t.Errorf("error: %v", err)
+	}
+
+	if string(data) != "Hello" {
+		t.Errorf("error: %v", err)
+	}
+
+	time.Sleep(10 * time.Second)
+}
