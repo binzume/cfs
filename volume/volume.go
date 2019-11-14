@@ -10,7 +10,10 @@ import (
 
 type Volume interface {
 	Available() bool
+	VolumeReader
+}
 
+type VolumeReader interface {
 	ReadDir(path string) ([]*FileEntry, error)
 	Stat(path string) (*FileStat, error)
 	Open(path string) (reader FileReadCloser, err error)

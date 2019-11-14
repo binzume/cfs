@@ -74,10 +74,8 @@ func (vg *VolumeGroup) OpenFile(path string, flag int, perm os.FileMode) (File, 
 		if vw, ok := v.(VolumeWriter); ok {
 			return vw.OpenFile(p, flag, perm)
 		}
-	}
-	if flag == 0 {
-		// readonly
-		if v, p, ok := vg.resolve(path); ok {
+		if flag == 0 {
+			// readonly
 			f, err := v.Open(p)
 			if err != nil {
 				return nil, err

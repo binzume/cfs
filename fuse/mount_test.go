@@ -22,7 +22,7 @@ func TestMount(t *testing.T) {
 		}
 	}()
 
-	time.Sleep(2 * time.Second)
+	time.Sleep(1 * time.Second)
 
 	data, err := ioutil.ReadFile("X:/hello.txt")
 	if err != nil {
@@ -30,8 +30,8 @@ func TestMount(t *testing.T) {
 	}
 
 	if string(data) != "Hello" {
-		t.Errorf("error: %v", err)
+		t.Errorf("unexpected: %v", string(data))
 	}
 
-	time.Sleep(10 * time.Second)
+	time.Sleep(5 * time.Second)
 }
