@@ -9,8 +9,9 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"./fs"
-	"./volume"
+	"../fuse"
+	"../volume"
+	"../ws_volume"
 )
 
 var defaultHubAPI = "http://localhost:8080"
@@ -50,27 +51,26 @@ func publish(localPath, volumePath string, writable bool) error {
 	finish := make(chan error)
 	hubConn.WriteJSON(&map[string]string{"action": "volume", "name": strings.SplitN(volumePath, "/", 2)[1], "url": "ws://localhost:8080/"})
 
-	v := volume.NewLocalVolume(localPath, volumePath, writable)
+	v := volume.NewLocalVolume(localPath) // volumePath, writable
 
 	go func() {
 		// listen loop
+		defer close(finish)
 		for {
 			var event map[string]string
 			err := hubConn.ReadJSON(&event)
 			if err != nil {
 				log.Println("read error: ", err)
 				finish <- err
-				return
 			}
 			log.Println(event)
 			if event["action"] == "connect" {
 				newConn, err := Connect(event["ws_url"], "", "") // TODO
 				if err == nil {
-					go volume.ConnectClient(v, newConn, event["target"])
+					go ws_volume.ConnectClient(v, newConn, event["target"])
 				}
 			}
 		}
-		finish <- nil
 	}()
 
 	log.Println("wait...")
@@ -82,11 +82,11 @@ func publish(localPath, volumePath string, writable bool) error {
 func mount(volumePath, mountPoint string) error {
 	log.Println("mount ", volumePath, " to ", mountPoint)
 
-	connector := func(v *volume.RemoteVolume) (*websocket.Conn, error) {
+	connector := func(v *ws_volume.RemoteVolume) (*websocket.Conn, error) {
 		return ConnectViaPloxy(v.Name, hubToken())
 	}
 
-	v := volume.NewRemoteVolume(volumePath, connector)
+	v := ws_volume.NewRemoteVolume(volumePath, connector)
 	volumeExit, err := v.Start()
 	if err != nil {
 		log.Println("connect error: ", err)
@@ -94,7 +94,7 @@ func mount(volumePath, mountPoint string) error {
 	}
 	defer v.Terminate()
 
-	mountErr := fs.MountVolume(v, mountPoint)
+	mountErr := fuse.MountVolume(v, mountPoint)
 
 	log.Println("started.", err)
 	select {
