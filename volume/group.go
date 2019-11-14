@@ -35,10 +35,6 @@ func (vg *VolumeGroup) Clear() {
 	vg.vv = nil
 }
 
-func (v *VolumeGroup) Locker() sync.Locker {
-	return &v.lock
-}
-
 func (vg *VolumeGroup) Stat(path string) (*FileStat, error) {
 	if v, p, ok := vg.resolve(path); ok {
 		return v.Stat(p)

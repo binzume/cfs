@@ -5,12 +5,10 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sync"
 	"time"
 )
 
 type Volume interface {
-	Locker() sync.Locker
 	Available() bool
 
 	ReadDir(path string) ([]*FileEntry, error)

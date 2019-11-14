@@ -6,14 +6,12 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"sync"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
 )
 
 type LocalVolume struct {
-	lock     sync.Mutex
 	basePath string
 }
 
@@ -32,10 +30,6 @@ func newLocalFileEntry(path string, info os.FileInfo, v *LocalVolume) *FileEntry
 			IsDir:       info.IsDir(),
 		},
 	}
-}
-
-func (v *LocalVolume) Locker() sync.Locker {
-	return &v.lock
 }
 
 func (v *LocalVolume) Available() bool {

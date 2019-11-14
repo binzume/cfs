@@ -6,12 +6,10 @@ import (
 	"io"
 	"path/filepath"
 	"strings"
-	"sync"
 )
 
 type ZipVolume struct {
 	Path string
-	lock sync.Mutex
 }
 
 func NewZipVolume(path string) *ZipVolume {
@@ -30,10 +28,6 @@ func (zfr *ZipFileReader) Close() error {
 
 func (zfr *ZipFileReader) ReadAt(p []byte, off int64) (n int, err error) {
 	return 0, Unsupported
-}
-
-func (v *ZipVolume) Locker() sync.Locker {
-	return &v.lock
 }
 
 func (v *ZipVolume) Available() bool {

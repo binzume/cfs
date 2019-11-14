@@ -2,19 +2,13 @@ package volume
 
 import (
 	"io"
-	"sync"
 )
 
 type StubVolume struct {
-	lock sync.Mutex
 }
 
 func NewStubVolume() *StubVolume {
 	return &StubVolume{}
-}
-
-func (v *StubVolume) Locker() sync.Locker {
-	return &v.lock
 }
 
 func (v *StubVolume) Available() bool {

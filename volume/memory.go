@@ -19,10 +19,6 @@ func NewOnMemoryVolume(init map[string][]byte) *OnMemoryVolume {
 	return &OnMemoryVolume{files: init}
 }
 
-func (v *OnMemoryVolume) Locker() sync.Locker {
-	return &v.lock
-}
-
 func (v *OnMemoryVolume) Available() bool {
 	return true
 }
