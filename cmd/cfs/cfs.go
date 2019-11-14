@@ -9,9 +9,9 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"../fuse"
-	"../volume"
-	"../ws_volume"
+	"../../fuse"
+	"../../volume"
+	"../../ws_volume"
 )
 
 var defaultHubAPI = "http://localhost:8080"
