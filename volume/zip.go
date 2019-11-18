@@ -6,7 +6,6 @@ import (
 	"errors"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 )
 
@@ -75,7 +74,7 @@ func (v *ZipVolume) Stat(path string) (*FileStat, error) {
 	}
 	defer closer.Close()
 	for _, f := range r.File {
-		if filepath.Base(f.Name) != path {
+		if !strings.HasSuffix("/"+f.Name, "/"+path) {
 			continue
 		}
 		fi := f.FileInfo()
@@ -122,17 +121,15 @@ func (v *ZipVolume) Open(path string) (reader FileReadCloser, err error) {
 
 	for _, f := range r.File {
 		fi := f.FileInfo()
-		if fi.IsDir() {
+		if fi.IsDir() || !strings.HasSuffix("/"+f.Name, "/"+path) {
 			continue
 		}
-		if filepath.Base(f.Name) == path {
-			fr, err := f.Open()
-			if err != nil {
-				closer.Close()
-				return nil, err
-			}
-			return &ZipFileReader{fr, closer, fi.Size(), nil}, nil
+		fr, err := f.Open()
+		if err != nil {
+			closer.Close()
+			return nil, err
 		}
+		return &ZipFileReader{fr, closer, fi.Size(), nil}, nil
 	}
 	closer.Close()
 	return nil, errors.New("noent")
