@@ -66,6 +66,14 @@ func (f *FileEntry) Name() string {
 	return filepath.Base(f.Path)
 }
 
+func (f *FileStat) ModTime() time.Time {
+	return f.UpdatedTime
+}
+
+func (f *FileStat) Sys() interface{} {
+	return nil
+}
+
 type EventType int
 
 var Unsupported = errors.New("unsupported operation")

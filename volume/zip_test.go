@@ -7,7 +7,7 @@ import (
 )
 
 func TestZipVolume(t *testing.T) {
-	var vol Volume = NewZipVolume("testdata/test.zip")
+	var vol Volume = NewZipVolume("testdata/test.zip", nil)
 
 	if !vol.Available() {
 		t.Fatal("volume is unavailable")
@@ -24,7 +24,7 @@ func TestZipVolume(t *testing.T) {
 }
 
 func TestZipVolume_Open(t *testing.T) {
-	var vol = NewZipVolume("testdata/test.zip")
+	var vol = NewZipVolume("testdata/test.zip", nil)
 
 	r, err := vol.Open("test.txt")
 	if err != nil {
