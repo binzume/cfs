@@ -11,11 +11,11 @@ func (v *StubVolume) Available() bool {
 	return true
 }
 
-func (v *StubVolume) Stat(path string) (*FileStat, error) {
+func (v *StubVolume) Stat(path string) (*FileInfo, error) {
 	return nil, Unsupported
 }
 
-func (v *StubVolume) ReadDir(path string) ([]*FileEntry, error) {
+func (v *StubVolume) ReadDir(path string) ([]*FileInfo, error) {
 	return nil, Unsupported
 }
 

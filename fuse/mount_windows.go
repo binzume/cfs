@@ -10,7 +10,7 @@ import (
 	"github.com/keybase/dokan-go"
 	"github.com/keybase/kbfs/dokan/winacl"
 
-	"../volume"
+	"github.com/binzume/cfs/volume"
 )
 
 // FileSystem
@@ -30,13 +30,13 @@ func (fs *fuseFs) CreateFile(ctx context.Context, fi *dokan.FileInfo, cd *dokan.
 		return nil, false, err
 	}
 	var file volume.File
-	if !st.IsDir {
+	if !st.IsDir() {
 		file, err = fs.v.OpenFile(path, 0, 0)
 		if err != nil {
 			return nil, false, err
 		}
 	}
-	return &fuseDir{v: fs.v, path: path, st: st, file: file}, st.IsDir, nil
+	return &fuseDir{v: fs.v, path: path, st: st, file: file}, st.IsDir(), nil
 }
 
 func (fs *fuseFs) GetDiskFreeSpace(ctx context.Context) (dokan.FreeSpace, error) {
@@ -146,7 +146,7 @@ type fuseDir struct {
 	baseFile
 	path string
 	v    volume.FS
-	st   *volume.FileStat
+	st   *volume.FileInfo
 	file volume.File
 }
 
@@ -169,11 +169,11 @@ func (t *fuseDir) FindFiles(ctx context.Context, fi *dokan.FileInfo, p string, c
 	for _, f := range files {
 		st := dokan.NamedStat{}
 		st.Name = f.Name()
-		st.FileSize = f.Size
+		st.FileSize = f.FileSize
 		st.LastWrite = f.UpdatedTime
 		st.LastAccess = f.UpdatedTime
 		st.Creation = f.CreatedTime
-		if f.IsDir {
+		if f.IsDir() {
 			st.FileAttributes = dokan.FileAttributeDirectory
 		} else {
 			st.FileAttributes = dokan.FileAttributeNormal
@@ -194,12 +194,12 @@ func (t *fuseDir) GetFileInformation(ctx context.Context, fi *dokan.FileInfo) (*
 	}
 	f := t.st
 	st := &dokan.Stat{
-		FileSize:   f.Size,
+		FileSize:   f.FileSize,
 		LastWrite:  f.UpdatedTime,
 		LastAccess: f.UpdatedTime,
 		Creation:   f.CreatedTime,
 	}
-	if f.IsDir {
+	if f.IsDir() {
 		st.FileAttributes = dokan.FileAttributeDirectory
 	}
 	return st, nil

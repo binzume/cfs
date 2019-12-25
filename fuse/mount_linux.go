@@ -28,14 +28,14 @@ func (t *fuseFs) GetAttr(name string, context *fuse.Context) (*fuse.Attr, fuse.S
 		return nil, fuse.ENOENT
 	}
 
-	if f.IsDir {
+	if f.IsDir() {
 		return &fuse.Attr{
 			Mode: fuse.S_IFDIR | 0755,
 		}, fuse.OK
 	}
 	return &fuse.Attr{
 		Mode:  fuse.S_IFREG | 0644,
-		Size:  uint64(f.Size),
+		Size:  uint64(f.Size()),
 		Ctime: uint64(f.CreatedTime),
 		Mtime: uint64(f.UpdatedTime),
 		Atime: uint64(f.UpdatedTime),

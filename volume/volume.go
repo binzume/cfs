@@ -14,8 +14,8 @@ type Volume interface {
 }
 
 type VolumeReader interface {
-	ReadDir(path string) ([]*FileEntry, error)
-	Stat(path string) (*FileStat, error)
+	ReadDir(path string) ([]*FileInfo, error)
+	Stat(path string) (*FileInfo, error)
 	Open(path string) (reader FileReadCloser, err error)
 }
 
@@ -27,7 +27,7 @@ type VolumeWriter interface {
 }
 
 type VolumeWalker interface {
-	Walk(callback func(*FileEntry)) error
+	Walk(callback func(*FileInfo)) error
 }
 
 type VolumeWatcher interface {
@@ -50,28 +50,40 @@ type File interface {
 	io.WriterAt
 }
 
-type FileStat struct {
-	Size        int64     `json:"size"`
-	CreatedTime time.Time `json:"created_time"`
-	UpdatedTime time.Time `json:"updated_time"`
-	IsDir       bool      `json:"is_directory"`
+type FileInfo struct {
+	Path        string                 `json:"path"`
+	FileSize    int64                  `json:"size"`
+	CreatedTime time.Time              `json:"created_time"`
+	UpdatedTime time.Time              `json:"updated_time"`
+	IsDirectory bool                   `json:"is_directory"`
+	Metadata    map[string]interface{} `json:"metadata"`
 }
 
-type FileEntry struct {
-	Path string `json:"path"`
-	FileStat
-}
-
-func (f *FileEntry) Name() string {
+func (f *FileInfo) Name() string {
 	return filepath.Base(f.Path)
 }
 
-func (f *FileStat) ModTime() time.Time {
+func (f *FileInfo) ModTime() time.Time {
 	return f.UpdatedTime
 }
 
-func (f *FileStat) Sys() interface{} {
-	return nil
+func (f *FileInfo) Size() int64 {
+	return f.FileSize
+}
+
+func (f *FileInfo) IsDir() bool {
+	return f.IsDirectory
+}
+
+func (f *FileInfo) Mode() os.FileMode {
+	if f.IsDir() {
+		return os.ModeDir
+	}
+	return 0
+}
+
+func (f *FileInfo) Sys() interface{} {
+	return f.Metadata
 }
 
 type EventType int
@@ -86,7 +98,7 @@ const (
 
 type FileEvent struct {
 	Type EventType
-	File *FileEntry
+	File *FileInfo
 }
 
 type FS interface {

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"../volume"
+	"github.com/binzume/cfs/volume"
 )
 
 func TestMount(t *testing.T) {

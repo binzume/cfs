@@ -23,15 +23,15 @@ func (v *OnMemoryVolume) Available() bool {
 	return true
 }
 
-func (v *OnMemoryVolume) Stat(path string) (*FileStat, error) {
+func (v *OnMemoryVolume) Stat(path string) (*FileInfo, error) {
 	if path == "" {
-		return &FileStat{IsDir: true, Size: 0, UpdatedTime: time.Time{}}, nil
+		return &FileInfo{Path: path, IsDirectory: true, FileSize: 0, UpdatedTime: time.Time{}}, nil
 	}
 	data := v.get(path)
 	if data == nil {
 		return nil, errors.New("noent")
 	}
-	return &FileStat{IsDir: false, Size: int64(len(data)), UpdatedTime: time.Time{}}, nil
+	return &FileInfo{IsDirectory: false, FileSize: int64(len(data)), UpdatedTime: time.Time{}}, nil
 }
 
 func (v *OnMemoryVolume) Remove(path string) error {
@@ -41,14 +41,14 @@ func (v *OnMemoryVolume) Remove(path string) error {
 	return nil
 }
 
-func (v *OnMemoryVolume) ReadDir(path string) ([]*FileEntry, error) {
+func (v *OnMemoryVolume) ReadDir(path string) ([]*FileInfo, error) {
 	v.lock.RLock()
 	defer v.lock.RUnlock()
-	files := []*FileEntry{}
+	files := []*FileInfo{}
 	for name := range v.files {
 		f, err := v.Stat(name)
 		if err == nil {
-			files = append(files, &FileEntry{FileStat: *f, Path: name})
+			files = append(files, f)
 		}
 	}
 	return files, nil
@@ -76,15 +76,13 @@ func (v *OnMemoryVolume) get(path string) []byte {
 	return v.files[path]
 }
 
-func (v *OnMemoryVolume) Walk(callback func(*FileEntry)) error {
+func (v *OnMemoryVolume) Walk(callback func(*FileInfo)) error {
 	for name, data := range v.files {
-		callback(&FileEntry{
-			FileStat: FileStat{
-				IsDir:       false,
-				Size:        int64(len(data)),
-				UpdatedTime: time.Time{},
-			},
-			Path: name,
+		callback(&FileInfo{
+			IsDirectory: false,
+			FileSize:    int64(len(data)),
+			UpdatedTime: time.Time{},
+			Path:        name,
 		})
 	}
 	return nil

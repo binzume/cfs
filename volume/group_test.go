@@ -32,7 +32,7 @@ func TestVolumeGroup_Stat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error: %v", err)
 	}
-	if !st.IsDir {
+	if !st.IsDir() {
 		t.Fatalf("stat err: %v", st)
 	}
 
@@ -40,7 +40,7 @@ func TestVolumeGroup_Stat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error: %v", err)
 	}
-	if st.Size == 0 {
+	if st.Size() == 0 {
 		t.Fatalf("stat err: %v", st)
 	}
 
@@ -48,7 +48,7 @@ func TestVolumeGroup_Stat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error: %v", err)
 	}
-	if !st.IsDir {
+	if !st.IsDir() {
 		t.Fatalf("stat err: %v", st)
 	}
 }
@@ -84,7 +84,7 @@ func TestVolumeGroup_ReadDir(t *testing.T) {
 
 func TestVolumeGroup_Walk(t *testing.T) {
 	vgroup := newTestVolumeGroup()
-	vgroup.Walk(func(f *FileEntry) {
+	vgroup.Walk(func(f *FileInfo) {
 		log.Println(f)
 	})
 }

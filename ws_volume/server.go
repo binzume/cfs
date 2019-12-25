@@ -7,7 +7,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"../volume"
+	"github.com/binzume/cfs/volume"
 )
 
 func errorResponse(rid interface{}, msg string) *map[string]interface{} {

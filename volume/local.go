@@ -20,15 +20,13 @@ func NewLocalVolume(basePath string) *LocalVolume {
 	return &LocalVolume{basePath: basePath}
 }
 
-func newLocalFileEntry(path string, info os.FileInfo, v *LocalVolume) *FileEntry {
-	return &FileEntry{
-		Path: path,
-		FileStat: FileStat{
-			Size:        info.Size(),
-			UpdatedTime: info.ModTime(),
-			CreatedTime: time.Unix(0, GetCTime(info)),
-			IsDir:       info.IsDir(),
-		},
+func newLocalFileEntry(path string, info os.FileInfo, v *LocalVolume) *FileInfo {
+	return &FileInfo{
+		Path:        path,
+		FileSize:    info.Size(),
+		UpdatedTime: info.ModTime(),
+		CreatedTime: time.Unix(0, GetCTime(info)),
+		IsDirectory: info.IsDir(),
 	}
 }
 
@@ -37,20 +35,20 @@ func (v *LocalVolume) Available() bool {
 	return err == nil
 }
 
-func (v *LocalVolume) Stat(path string) (*FileStat, error) {
+func (v *LocalVolume) Stat(path string) (*FileInfo, error) {
 	fi, err := os.Stat(v.RealPath(path))
 	if err != nil {
 		return nil, err
 	}
-	return &FileStat{IsDir: fi.IsDir(), Size: fi.Size(), UpdatedTime: fi.ModTime()}, nil
+	return &FileInfo{Path: path, IsDirectory: fi.IsDir(), FileSize: fi.Size(), UpdatedTime: fi.ModTime()}, nil
 }
 
-func (v *LocalVolume) ReadDir(path string) ([]*FileEntry, error) {
+func (v *LocalVolume) ReadDir(path string) ([]*FileInfo, error) {
 	items, err := ioutil.ReadDir(v.RealPath(path))
 	if err != nil {
 		return nil, err
 	}
-	files := []*FileEntry{}
+	files := []*FileInfo{}
 	for _, fi := range items {
 		files = append(files, newLocalFileEntry(fi.Name(), fi, v))
 	}
@@ -81,11 +79,11 @@ func (v *LocalVolume) Mkdir(path string, mode os.FileMode) error {
 	return os.Mkdir(v.RealPath(path), mode)
 }
 
-func (v *LocalVolume) Walk(callback func(*FileEntry)) error {
+func (v *LocalVolume) Walk(callback func(*FileInfo)) error {
 	return v.walk(callback, "")
 }
 
-func (v *LocalVolume) walk(callback func(*FileEntry), path string) error {
+func (v *LocalVolume) walk(callback func(*FileInfo), path string) error {
 	f := func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -126,7 +124,7 @@ func (v *LocalVolume) Watch(callback func(FileEvent)) (io.Closer, error) {
 						if err == nil {
 							if info.IsDir() {
 								watcher.Add(event.Name)
-								v.walk(func(f *FileEntry) {
+								v.walk(func(f *FileInfo) {
 									callback(FileEvent{CreateEvent, f})
 								}, path)
 							} else {
@@ -138,7 +136,7 @@ func (v *LocalVolume) Watch(callback func(FileEvent)) (io.Closer, error) {
 						path, _ := filepath.Rel(v.basePath, event.Name)
 						callback(FileEvent{
 							RemoveEvent,
-							&FileEntry{Path: path, FileStat: FileStat{}},
+							&FileInfo{Path: path},
 						})
 					}
 				case err := <-watcher.Errors:

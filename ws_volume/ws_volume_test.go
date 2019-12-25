@@ -3,7 +3,7 @@ package ws_volume
 import (
 	"testing"
 
-	"../volume"
+	"github.com/binzume/cfs/volume"
 )
 
 func TestWsVolume(t *testing.T) {

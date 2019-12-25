@@ -11,7 +11,7 @@ type volumeWrapper struct {
 	writable bool
 }
 
-func (fs *volumeWrapper) Walk(callback func(*FileEntry)) error {
+func (fs *volumeWrapper) Walk(callback func(*FileInfo)) error {
 	return walk(fs.Volume, callback)
 }
 
@@ -58,31 +58,31 @@ func (v *volumeWrapper) OpenFile(path string, flag int, perm os.FileMode) (File,
 	return nil, Unsupported
 }
 
-func (fs *volumeWrapper) WalkCh() <-chan *FileEntry {
-	fch := make(chan *FileEntry)
+func (fs *volumeWrapper) WalkCh() <-chan *FileInfo {
+	fch := make(chan *FileInfo)
 	go func() {
 		defer close(fch)
-		fs.Walk(func(f *FileEntry) {
+		fs.Walk(func(f *FileInfo) {
 			fch <- f
 		})
 	}()
 	return fch
 }
 
-func walk(v Volume, callback func(*FileEntry)) error {
+func walk(v Volume, callback func(*FileInfo)) error {
 	if w, ok := v.(VolumeWalker); ok {
 		return w.Walk(callback)
 	}
 	return walkDir(v, callback, "")
 }
 
-func walkDir(v Volume, callback func(*FileEntry), path string) error {
+func walkDir(v Volume, callback func(*FileInfo), path string) error {
 	files, err := v.ReadDir(path)
 	if err != nil {
 		return err
 	}
 	for _, f := range files {
-		if f.IsDir {
+		if f.IsDir() {
 			err = walkDir(v, callback, f.Path)
 			if err != nil {
 				return err

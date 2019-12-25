@@ -63,7 +63,7 @@ func (v *ZipVolume) openZip() (io.Closer, *zip.Reader, error) {
 		if err != nil {
 			return nil, nil, err
 		}
-		size = stat.Size
+		size = stat.Size()
 	} else {
 		stat, err := os.Stat(v.path)
 		if err != nil {
@@ -83,7 +83,7 @@ func (v *ZipVolume) openZip() (io.Closer, *zip.Reader, error) {
 	return fr, r, err
 }
 
-func (v *ZipVolume) Stat(path string) (*FileStat, error) {
+func (v *ZipVolume) Stat(path string) (*FileInfo, error) {
 	closer, r, err := v.openZip()
 	if err != nil {
 		return nil, err
@@ -94,35 +94,34 @@ func (v *ZipVolume) Stat(path string) (*FileStat, error) {
 			continue
 		}
 		fi := f.FileInfo()
-		return &FileStat{
-			IsDir:       fi.IsDir(),
-			Size:        fi.Size(),
+		return &FileInfo{
+			Path:        f.Name,
+			IsDirectory: fi.IsDir(),
+			FileSize:    fi.Size(),
 			UpdatedTime: fi.ModTime(),
 		}, nil
 	}
 	return nil, errors.New("noent")
 }
 
-func (v *ZipVolume) ReadDir(path string) ([]*FileEntry, error) {
+func (v *ZipVolume) ReadDir(path string) ([]*FileInfo, error) {
 	closer, r, err := v.openZip()
 	if err != nil {
 		return nil, err
 	}
 	defer closer.Close()
 
-	files := []*FileEntry{}
+	files := []*FileInfo{}
 	for _, f := range r.File {
 		fi := f.FileInfo()
 		if fi.IsDir() {
 			continue
 		}
-		fe := &FileEntry{
-			FileStat: FileStat{
-				IsDir:       fi.IsDir(),
-				Size:        fi.Size(),
-				UpdatedTime: fi.ModTime(),
-			},
-			Path: f.Name,
+		fe := &FileInfo{
+			Path:        f.Name,
+			IsDirectory: fi.IsDir(),
+			FileSize:    fi.Size(),
+			UpdatedTime: fi.ModTime(),
 		}
 		files = append(files, fe)
 	}
@@ -168,7 +167,7 @@ func (v *ZipAsDirVolume) Open(path string) (reader FileReadCloser, err error) {
 	return nil, err
 }
 
-func (v *ZipAsDirVolume) Stat(path string) (stat *FileStat, err error) {
+func (v *ZipAsDirVolume) Stat(path string) (stat *FileInfo, err error) {
 	stat, err = v.FS.Stat(path)
 	if err == nil {
 		return
@@ -181,14 +180,14 @@ func (v *ZipAsDirVolume) Stat(path string) (stat *FileStat, err error) {
 	return nil, err
 }
 
-func (v *ZipAsDirVolume) ReadDir(path string) (files []*FileEntry, err error) {
+func (v *ZipAsDirVolume) ReadDir(path string) (files []*FileInfo, err error) {
 	files, err = v.FS.ReadDir(path)
 	if err == nil {
 		return
 	}
 
 	fi, err2 := v.Stat(path)
-	if err2 == nil && !fi.IsDir && strings.HasSuffix(path, ".zip") {
+	if err2 == nil && !fi.IsDir() && strings.HasSuffix(path, ".zip") {
 		zv := &ZipVolume{v.FS, path}
 		files, err = zv.ReadDir("")
 		for _, fi := range files {

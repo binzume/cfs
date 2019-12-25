@@ -11,7 +11,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"../volume"
+	"github.com/binzume/cfs/volume"
 )
 
 // RemoteVolume ...
@@ -30,7 +30,7 @@ type statCache struct {
 	lock sync.Mutex
 }
 type statCacheE struct {
-	stat *volume.FileStat
+	stat *volume.FileInfo
 	time time.Time
 }
 
@@ -48,12 +48,12 @@ func NewRemoteVolume(name string, conn websocketConnector) *RemoteVolume {
 
 var statCacheExpireTime = time.Second * 5
 
-func (c *statCache) set(path string, stat *volume.FileStat) {
+func (c *statCache) set(path string, stat *volume.FileInfo) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	c.c[path] = &statCacheE{stat: stat, time: time.Now()}
 }
-func (c *statCache) get(path string) *volume.FileStat {
+func (c *statCache) get(path string) *volume.FileInfo {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	if s, ok := c.c[path]; ok {
@@ -136,12 +136,12 @@ func (v *RemoteVolume) Available() bool {
 	return v.connected
 }
 
-func (v *RemoteVolume) Stat(path string) (*volume.FileStat, error) {
+func (v *RemoteVolume) Stat(path string) (*volume.FileInfo, error) {
 	if s := v.statCache.get(path); s != nil {
 		return s, nil
 	}
 	var res struct {
-		S *volume.FileStat `json:"stat"`
+		S *volume.FileInfo `json:"stat"`
 	}
 	err := v.request(map[string]interface{}{"op": "stat", "path": path}, &res)
 	if err != nil {
@@ -236,16 +236,16 @@ func (v *RemoteVolume) Remove(path string) error {
 	return v.request(map[string]interface{}{"op": "remove", "path": path}, &res)
 }
 
-func (v *RemoteVolume) ReadDir(path string) ([]*volume.FileEntry, error) {
+func (v *RemoteVolume) ReadDir(path string) ([]*volume.FileInfo, error) {
 	var res struct {
-		Files []*volume.FileEntry `json:"files"`
+		Files []*volume.FileInfo `json:"files"`
 	}
 	err := v.request(map[string]interface{}{"op": "files", "path": path}, &res)
 	if err != nil {
 		return nil, err
 	}
 	for _, f := range res.Files {
-		v.statCache.set(path+"/"+f.Path, &f.FileStat)
+		v.statCache.set(path+"/"+f.Path, f)
 	}
 	return res.Files, nil
 }

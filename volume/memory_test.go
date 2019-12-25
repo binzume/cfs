@@ -51,11 +51,11 @@ func TestOnMemoryVolume_Stat(t *testing.T) {
 		t.Errorf("error: %v", err)
 	}
 
-	if stat.Size != 5 {
-		t.Errorf("size: %v", stat.Size)
+	if stat.Size() != 5 {
+		t.Errorf("size: %v", stat.Size())
 	}
 
-	if stat.IsDir {
+	if stat.IsDir() {
 		t.Errorf("directory")
 	}
 }

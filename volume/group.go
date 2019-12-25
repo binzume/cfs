@@ -35,11 +35,11 @@ func (vg *VolumeGroup) Clear() {
 	vg.vv = nil
 }
 
-func (vg *VolumeGroup) Stat(path string) (*FileStat, error) {
+func (vg *VolumeGroup) Stat(path string) (*FileInfo, error) {
 	if v, p, ok := vg.resolve(path); ok {
 		return v.Stat(p)
 	}
-	return &FileStat{IsDir: true}, nil
+	return &FileInfo{IsDirectory: true}, nil
 }
 
 func (vg *VolumeGroup) Remove(path string) error {
@@ -90,8 +90,8 @@ func (vg *VolumeGroup) OpenFile(path string, flag int, perm os.FileMode) (File, 
 	return nil, Unsupported
 }
 
-func (vg *VolumeGroup) ReadDir(path string) ([]*FileEntry, error) {
-	files := []*FileEntry{} // TODO uniq.
+func (vg *VolumeGroup) ReadDir(path string) ([]*FileInfo, error) {
+	files := []*FileInfo{} // TODO uniq.
 
 	if v, p, ok := vg.resolve(path); ok {
 		files, _ = v.ReadDir(p)
@@ -105,7 +105,7 @@ func (vg *VolumeGroup) ReadDir(path string) ([]*FileEntry, error) {
 	for _, e := range vg.vv {
 		if e.v.Available() && strings.HasPrefix(e.p, path) {
 			n := strings.Split(e.p[len(path):], "/")[0]
-			files = append(files, &FileEntry{FileStat: FileStat{IsDir: true}, Path: n})
+			files = append(files, &FileInfo{IsDirectory: true, Path: n})
 		}
 	}
 	return files, nil
@@ -122,12 +122,12 @@ func (vg *VolumeGroup) Available() bool {
 	return true
 }
 
-func (vg *VolumeGroup) Walk(callback func(f *FileEntry)) error {
+func (vg *VolumeGroup) Walk(callback func(f *FileInfo)) error {
 	vg.lock.RLock()
 	defer vg.lock.RUnlock()
 	for _, e := range vg.vv {
 		if e.v.Available() {
-			err := walk(e.v, func(f *FileEntry) {
+			err := walk(e.v, func(f *FileInfo) {
 				f.Path = e.p + "/" + f.Path
 				callback(f)
 			})
