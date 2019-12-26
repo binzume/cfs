@@ -1,4 +1,4 @@
-package http_volume
+package httpvolume
 
 import (
 	"io/ioutil"
@@ -13,8 +13,15 @@ func init() {
 	RequestLogger = log.New(os.Stderr, "", log.LstdFlags)
 }
 
+func TestHttpVolume(t *testing.T) {
+	var vol = NewHTTPVolume(testURL, false)
+	if !vol.Available() {
+		t.Errorf("not available")
+	}
+}
+
 func TestHttpVolume_Stat(t *testing.T) {
-	var vol = NewHttpVolume(testURL, false)
+	var vol = NewHTTPVolume(testURL, false)
 
 	stat, err := vol.Stat("index.txt")
 	if err != nil {
@@ -23,9 +30,14 @@ func TestHttpVolume_Stat(t *testing.T) {
 	if stat.Size() == 0 {
 		t.Errorf("empty content")
 	}
-	t.Logf("content size: %v", stat.Size())
+	t.Logf("file: %v size: %v modified: %v", stat.Name(), stat.Size(), stat.ModTime())
 
-	var vol2 = NewHttpVolume("", false)
+	_, err = vol.Stat("notfound.txt")
+	if err == nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+
+	var vol2 = NewHTTPVolume("", false)
 
 	stat, err = vol2.Stat(testURL + "index.txt")
 	if err != nil {
@@ -34,11 +46,10 @@ func TestHttpVolume_Stat(t *testing.T) {
 	if stat.Size() == 0 {
 		t.Errorf("empty content")
 	}
-	t.Logf("content size: %v", stat.Size())
 }
 
 func TestHttpVolume_Open(t *testing.T) {
-	var vol = NewHttpVolume(testURL, false)
+	var vol = NewHTTPVolume(testURL, false)
 
 	r, err := vol.Open("index.txt")
 	if err != nil {
@@ -52,10 +63,16 @@ func TestHttpVolume_Open(t *testing.T) {
 	if string(b) == "" {
 		t.Errorf("empty content: %v", string(b))
 	}
+
+	r, err = vol.Open("notfound.txt")
+	if err == nil {
+		t.Errorf("unexpected error: %v", err)
+		r.Close()
+	}
 }
 
 func TestHttpVolume_ReadAt(t *testing.T) {
-	var vol = NewHttpVolume(testURL, true)
+	var vol = NewHTTPVolume(testURL, true)
 
 	r, err := vol.Open("index.txt")
 	if err != nil {
