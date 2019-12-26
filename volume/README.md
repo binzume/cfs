@@ -7,7 +7,8 @@
 
 - local storage
 - memory
-- zip
+- zip (Readonly)
+- http (Readonly)
 
 ## Usage
 
@@ -32,4 +33,11 @@ r, err := vol.Open("aaa/hello.txt")
 
 // equiv: r, err := os.Open("/var/contents_b/index.html")
 r, err := vol.Open("bbb/data/index.html")
+```
+
+### http
+
+```golang
+vol := volume.NewHTTPVolume("", false)
+r, err := vol.Open("http://example.com/hoge.txt")
 ```
