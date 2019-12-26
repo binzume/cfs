@@ -2,8 +2,9 @@ package fuse
 
 import (
 	"log"
+	"os"
 
-	"../volume"
+	"github.com/binzume/cfs/volume"
 
 	"github.com/hanwen/go-fuse/fuse"
 	"github.com/hanwen/go-fuse/fuse/nodefs"
@@ -12,14 +13,14 @@ import (
 
 type fuseFs struct {
 	pathfs.FileSystem
-	v volume.Volume
+	v volume.FS
 }
 
 type fuseFile struct {
 	nodefs.File
 	path  string
-	v     volume.Volume
-	fstat *volume.FileStat
+	v     volume.FS
+	fstat *volume.FileInfo
 }
 
 func (t *fuseFs) GetAttr(name string, context *fuse.Context) (*fuse.Attr, fuse.Status) {
@@ -36,9 +37,9 @@ func (t *fuseFs) GetAttr(name string, context *fuse.Context) (*fuse.Attr, fuse.S
 	return &fuse.Attr{
 		Mode:  fuse.S_IFREG | 0644,
 		Size:  uint64(f.Size()),
-		Ctime: uint64(f.CreatedTime),
-		Mtime: uint64(f.UpdatedTime),
-		Atime: uint64(f.UpdatedTime),
+		Ctime: uint64(f.CreatedTime.Unix()),
+		Mtime: uint64(f.UpdatedTime.Unix()),
+		Atime: uint64(f.UpdatedTime.Unix()),
 	}, fuse.OK
 }
 
@@ -50,7 +51,7 @@ func (t *fuseFs) OpenDir(name string, context *fuse.Context) (c []fuse.DirEntry,
 
 	result := []fuse.DirEntry{}
 	for _, f := range files {
-		result = append(result, fuse.DirEntry{Name: f.Name, Mode: fuse.S_IFREG})
+		result = append(result, fuse.DirEntry{Name: f.Name(), Mode: fuse.S_IFREG})
 	}
 
 	return result, fuse.OK
@@ -69,7 +70,13 @@ func (t *fuseFs) Open(name string, flags uint32, context *fuse.Context) (file no
 }
 
 func (f *fuseFile) Read(buf []byte, off int64) (fuse.ReadResult, fuse.Status) {
-	len, err := f.v.Read(f.path, buf, off)
+	ff, err := f.v.Open(f.path)
+	if err != nil {
+		return nil, fuse.ENOSYS
+	}
+	defer ff.Close()
+
+	len, err := ff.ReadAt(buf, off)
 	if err != nil {
 		return nil, fuse.ENOSYS
 	}
@@ -78,16 +85,22 @@ func (f *fuseFile) Read(buf []byte, off int64) (fuse.ReadResult, fuse.Status) {
 }
 
 func (f *fuseFile) Write(data []byte, off int64) (uint32, fuse.Status) {
-	len, err := f.v.Write(f.path, data, off)
+	ff, err := f.v.OpenFile(f.path, os.O_WRONLY|os.O_CREATE, 0666)
+	if err != nil {
+		return 0, fuse.ENOSYS
+	}
+	defer ff.Close()
+
+	len, err := ff.WriteAt(data, off)
 	if err != nil {
 		return 0, fuse.ENOSYS
 	}
 	return uint32(len), fuse.OK
 }
 
-func MountVolume(v volume.FS, mountPoint string) <-chan error {
+func MountVolume(v volume.Volume, mountPoint string) <-chan error {
 
-	nfs := pathfs.NewPathNodeFs(&fuseFs{FileSystem: pathfs.NewDefaultFileSystem(), v: v}, nil)
+	nfs := pathfs.NewPathNodeFs(&fuseFs{FileSystem: pathfs.NewDefaultFileSystem(), v: volume.ToFS(v)}, nil)
 	server, _, err := nodefs.MountRoot(mountPoint, nfs.Root(), nil)
 	if err != nil {
 		log.Fatalf("Mount fail: %v\n", err)
