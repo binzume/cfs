@@ -56,7 +56,8 @@ func (v *LocalVolume) ReadDir(path string) ([]*FileInfo, error) {
 }
 
 func (v *LocalVolume) RealPath(path string) string {
-	return v.basePath + "/" + path
+	// Real path should be included in basePath.
+	return filepath.Join(v.basePath, filepath.Join("/", path))
 }
 
 func (v *LocalVolume) OpenFile(path string, flag int, perm os.FileMode) (f File, err error) {

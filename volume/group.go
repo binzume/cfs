@@ -1,7 +1,6 @@
 package volume
 
 import (
-	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -39,7 +38,7 @@ func (vg *VolumeGroup) Stat(path string) (*FileInfo, error) {
 	if v, p, ok := vg.resolve(path); ok {
 		return v.Stat(p)
 	}
-	return &FileInfo{IsDirectory: true}, nil
+	return &FileInfo{Path: path, IsDirectory: true}, nil
 }
 
 func (vg *VolumeGroup) Remove(path string) error {
@@ -48,7 +47,7 @@ func (vg *VolumeGroup) Remove(path string) error {
 			return vw.Remove(p)
 		}
 	}
-	return Unsupported
+	return unsupportedError("Remove", path)
 }
 
 func (vg *VolumeGroup) Mkdir(path string, perm os.FileMode) error {
@@ -57,7 +56,7 @@ func (vg *VolumeGroup) Mkdir(path string, perm os.FileMode) error {
 			return vw.Mkdir(p, perm)
 		}
 	}
-	return Unsupported
+	return unsupportedError("Mkdir", path)
 }
 
 func (vg *VolumeGroup) Create(path string) (FileWriteCloser, error) {
@@ -66,7 +65,7 @@ func (vg *VolumeGroup) Create(path string) (FileWriteCloser, error) {
 			return vw.Create(p)
 		}
 	}
-	return nil, Unsupported
+	return nil, unsupportedError("Create", path)
 }
 
 func (vg *VolumeGroup) OpenFile(path string, flag int, perm os.FileMode) (File, error) {
@@ -87,7 +86,7 @@ func (vg *VolumeGroup) OpenFile(path string, flag int, perm os.FileMode) (File, 
 			}{f, nil, nil}, nil
 		}
 	}
-	return nil, Unsupported
+	return nil, unsupportedError("OpenFile", path)
 }
 
 func (vg *VolumeGroup) ReadDir(path string) ([]*FileInfo, error) {
@@ -115,7 +114,7 @@ func (vg *VolumeGroup) Open(path string) (FileReadCloser, error) {
 	if v, p, ok := vg.resolve(path); ok {
 		return v.Open(p)
 	}
-	return nil, fmt.Errorf("not found: %s", path)
+	return nil, noentError("Open", path)
 }
 
 func (vg *VolumeGroup) Available() bool {

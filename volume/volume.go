@@ -88,8 +88,6 @@ func (f *FileInfo) Sys() interface{} {
 
 type EventType int
 
-var Unsupported = errors.New("unsupported operation")
-
 const (
 	CreateEvent EventType = iota
 	RemoveEvent
@@ -106,4 +104,32 @@ type FS interface {
 	VolumeWriter
 	VolumeWalker
 	VolumeWatcher
+}
+
+var NoentError = errors.New("noent")
+var PermissionError = errors.New("noent")
+var UnsupportedError = errors.New("unsupported operation")
+
+func noentError(op, path string) error {
+	return &os.PathError{
+		Op:   op,
+		Path: path,
+		Err:  NoentError,
+	}
+}
+
+func permissionError(op, path string) error {
+	return &os.PathError{
+		Op:   op,
+		Path: path,
+		Err:  PermissionError,
+	}
+}
+
+func unsupportedError(op, path string) error {
+	return &os.PathError{
+		Op:   op,
+		Path: path,
+		Err:  UnsupportedError,
+	}
 }

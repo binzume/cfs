@@ -2,7 +2,6 @@ package volume
 
 import (
 	"bytes"
-	"errors"
 	"sync"
 	"time"
 )
@@ -29,9 +28,9 @@ func (v *OnMemoryVolume) Stat(path string) (*FileInfo, error) {
 	}
 	data := v.get(path)
 	if data == nil {
-		return nil, errors.New("noent")
+		return nil, noentError("Stat", path)
 	}
-	return &FileInfo{IsDirectory: false, FileSize: int64(len(data)), UpdatedTime: time.Time{}}, nil
+	return &FileInfo{Path: path, IsDirectory: false, FileSize: int64(len(data)), UpdatedTime: time.Time{}}, nil
 }
 
 func (v *OnMemoryVolume) Remove(path string) error {
@@ -65,7 +64,7 @@ func (*MemReadCloser) Close() error {
 func (v *OnMemoryVolume) Open(path string) (reader FileReadCloser, err error) {
 	data := v.get(path)
 	if data == nil {
-		return nil, errors.New("noent")
+		return nil, noentError("Stat", path)
 	}
 	return &MemReadCloser{bytes.NewReader(data)}, nil
 }

@@ -1,14 +1,22 @@
 package volume
 
 import (
-	"fmt"
 	"io"
 	"os"
+	"path"
 )
 
 type volumeWrapper struct {
 	Volume
 	writable bool
+}
+
+func ToFS(v Volume) FS {
+	if fs, ok := v.(FS); ok {
+		return fs
+	}
+	_, writable := v.(VolumeWriter)
+	return &volumeWrapper{Volume: v, writable: writable}
 }
 
 func (fs *volumeWrapper) Walk(callback func(*FileInfo)) error {
@@ -21,41 +29,41 @@ func (fs *volumeWrapper) Watch(callback func(FileEvent)) (io.Closer, error) {
 
 func (v *volumeWrapper) Create(path string) (FileWriteCloser, error) {
 	if !v.writable {
-		return nil, fmt.Errorf("readonly %s", path)
+		return nil, permissionError("Create", path)
 	}
 	if w, ok := v.Volume.(VolumeWriter); ok {
 		return w.Create(path)
 	}
-	return nil, Unsupported
+	return nil, unsupportedError("Create", path)
 }
 
 func (v *volumeWrapper) Remove(path string) error {
 	if !v.writable {
-		return fmt.Errorf("readonly %s", path)
+		return permissionError("Remove", path)
 	}
 	if w, ok := v.Volume.(VolumeWriter); ok {
 		return w.Remove(path)
 	}
-	return Unsupported
+	return unsupportedError("Remove", path)
 }
 func (v *volumeWrapper) Mkdir(path string, perm os.FileMode) error {
 	if !v.writable {
-		return fmt.Errorf("readonly %s", path)
+		return permissionError("Mkdir", path)
 	}
 	if w, ok := v.Volume.(VolumeWriter); ok {
 		return w.Mkdir(path, perm)
 	}
-	return Unsupported
+	return unsupportedError("Mkdir", path)
 }
 
 func (v *volumeWrapper) OpenFile(path string, flag int, perm os.FileMode) (File, error) {
 	if !v.writable {
-		return nil, fmt.Errorf("readonly %s", path)
+		return nil, permissionError("OpenFile", path)
 	}
 	if w, ok := v.Volume.(VolumeWriter); ok {
 		return w.OpenFile(path, flag, perm)
 	}
-	return nil, Unsupported
+	return nil, unsupportedError("OpenFile", path)
 }
 
 func (fs *volumeWrapper) WalkCh() <-chan *FileInfo {
@@ -76,8 +84,8 @@ func walk(v Volume, callback func(*FileInfo)) error {
 	return walkDir(v, callback, "")
 }
 
-func walkDir(v Volume, callback func(*FileInfo), path string) error {
-	files, err := v.ReadDir(path)
+func walkDir(v Volume, callback func(*FileInfo), p string) error {
+	files, err := v.ReadDir(p)
 	if err != nil {
 		return err
 	}
@@ -88,6 +96,7 @@ func walkDir(v Volume, callback func(*FileInfo), path string) error {
 				return err
 			}
 		} else {
+			f.Path = path.Join(p, f.Path)
 			callback(f)
 		}
 	}
@@ -98,5 +107,5 @@ func watch(v Volume, callback func(FileEvent)) (io.Closer, error) {
 	if w, ok := v.(VolumeWatcher); ok {
 		return w.Watch(callback)
 	}
-	return nil, Unsupported
+	return nil, unsupportedError("watch", "")
 }

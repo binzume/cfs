@@ -3,7 +3,6 @@ package volume
 import (
 	"archive/zip"
 	"bytes"
-	"errors"
 	"io"
 	"os"
 	"strings"
@@ -40,7 +39,7 @@ func (zfr *zipFileReader) ReadAt(p []byte, off int64) (n int, err error) {
 		}
 		if sz != zfr.size {
 			// maybe already Read() has been called...
-			return 0, Unsupported
+			return 0, unsupportedError("Read", "")
 		}
 		zfr.byteReader = bytes.NewReader(buf.Bytes())
 	}
@@ -52,30 +51,29 @@ func (v *ZipVolume) Available() bool {
 }
 
 func (v *ZipVolume) openZip() (io.Closer, *zip.Reader, error) {
-	var size int64
 	var fr FileReadCloser
+	var err error
+	var stat os.FileInfo
+
 	if v.volume != nil {
-		stat, err := v.volume.Stat(v.path)
-		if err != nil {
-			return nil, nil, err
-		}
-		fr, err = v.volume.Open(v.path)
-		if err != nil {
-			return nil, nil, err
-		}
-		size = stat.Size()
+		stat, err = v.volume.Stat(v.path)
 	} else {
-		stat, err := os.Stat(v.path)
-		if err != nil {
-			return nil, nil, err
-		}
-		fr, err = os.Open(v.path)
-		if err != nil {
-			return nil, nil, err
-		}
-		size = stat.Size()
+		stat, err = os.Stat(v.path)
 	}
-	r, err := zip.NewReader(fr, size)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if v.volume != nil {
+		fr, err = v.volume.Open(v.path)
+	} else {
+		fr, err = os.Open(v.path)
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+
+	r, err := zip.NewReader(fr, stat.Size())
 	if err != nil {
 		fr.Close()
 		return nil, nil, err
@@ -101,7 +99,7 @@ func (v *ZipVolume) Stat(path string) (*FileInfo, error) {
 			UpdatedTime: fi.ModTime(),
 		}, nil
 	}
-	return nil, errors.New("noent")
+	return nil, noentError("Stat", path)
 }
 
 func (v *ZipVolume) ReadDir(path string) ([]*FileInfo, error) {
@@ -147,11 +145,17 @@ func (v *ZipVolume) Open(path string) (reader FileReadCloser, err error) {
 		return &zipFileReader{fr, closer, fi.Size(), nil}, nil
 	}
 	closer.Close()
-	return nil, errors.New("noent")
+	return nil, noentError("Open", path)
 }
+
+const zipSep = ":"
 
 type ZipAsDirVolume struct {
 	FS
+}
+
+func NewAutoUnzipVolume(v Volume) Volume {
+	return &ZipAsDirVolume{ToFS(v)}
 }
 
 func (v *ZipAsDirVolume) Open(path string) (reader FileReadCloser, err error) {
@@ -159,7 +163,7 @@ func (v *ZipAsDirVolume) Open(path string) (reader FileReadCloser, err error) {
 	if err == nil {
 		return
 	}
-	pathAndName := strings.SplitN(path, "/:/", 2)
+	pathAndName := strings.SplitN(path, "/"+zipSep+"/", 2)
 	if len(pathAndName) == 2 && strings.HasSuffix(pathAndName[0], ".zip") {
 		zv := &ZipVolume{v.FS, pathAndName[0]}
 		return zv.Open(pathAndName[1])
@@ -172,7 +176,7 @@ func (v *ZipAsDirVolume) Stat(path string) (stat *FileInfo, err error) {
 	if err == nil {
 		return
 	}
-	pathAndName := strings.SplitN(path, "/:/", 2)
+	pathAndName := strings.SplitN(path, "/"+zipSep+"/", 2)
 	if len(pathAndName) == 2 && strings.HasSuffix(pathAndName[0], ".zip") {
 		zv := &ZipVolume{v.FS, pathAndName[0]}
 		return zv.Stat(pathAndName[1])
@@ -191,7 +195,7 @@ func (v *ZipAsDirVolume) ReadDir(path string) (files []*FileInfo, err error) {
 		zv := &ZipVolume{v.FS, path}
 		files, err = zv.ReadDir("")
 		for _, fi := range files {
-			fi.Path = ":/" + fi.Path
+			fi.Path = zipSep + "/" + fi.Path
 		}
 	}
 	return

@@ -12,13 +12,13 @@ func (v *StubVolume) Available() bool {
 }
 
 func (v *StubVolume) Stat(path string) (*FileInfo, error) {
-	return nil, Unsupported
+	return nil, unsupportedError("ReadDir", path)
 }
 
 func (v *StubVolume) ReadDir(path string) ([]*FileInfo, error) {
-	return nil, Unsupported
+	return nil, unsupportedError("Stat", path)
 }
 
 func (v *StubVolume) Open(path string) (reader FileReadCloser, err error) {
-	return nil, Unsupported
+	return nil, unsupportedError("Open", path)
 }
