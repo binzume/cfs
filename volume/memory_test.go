@@ -3,6 +3,7 @@ package volume
 import (
 	"io/ioutil"
 	"log"
+	"os"
 	"testing"
 )
 
@@ -38,6 +39,12 @@ func TestOnMemoryVolume_Open(t *testing.T) {
 	if string(b) != "Hello" {
 		t.Errorf("unexpexted string: %v", string(b))
 	}
+
+	// NotFound
+	_, err = vol.Stat("notfound")
+	if _, ok := err.(*os.PathError); !ok {
+		t.Errorf("should return pathError. err: %v", err)
+	}
 }
 
 func TestOnMemoryVolume_Stat(t *testing.T) {
@@ -57,5 +64,22 @@ func TestOnMemoryVolume_Stat(t *testing.T) {
 
 	if stat.IsDir() {
 		t.Errorf("directory")
+	}
+}
+
+func TestOnMemoryVolume_Remove(t *testing.T) {
+	var vol = NewOnMemoryVolume(map[string][]byte{
+		"hello.txt": []byte("Hello"),
+		"hoge.txt":  []byte("World"),
+	})
+
+	err := vol.Remove("hello.txt")
+	if err != nil {
+		t.Errorf("error: %v", err)
+	}
+
+	_, err = vol.Stat("hello.txt")
+	if _, ok := err.(*os.PathError); !ok {
+		t.Errorf("should return pathError. err: %v", err)
 	}
 }

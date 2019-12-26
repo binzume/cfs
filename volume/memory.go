@@ -64,7 +64,7 @@ func (*MemReadCloser) Close() error {
 func (v *OnMemoryVolume) Open(path string) (reader FileReadCloser, err error) {
 	data := v.get(path)
 	if data == nil {
-		return nil, noentError("Stat", path)
+		return nil, noentError("Open", path)
 	}
 	return &MemReadCloser{bytes.NewReader(data)}, nil
 }

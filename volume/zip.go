@@ -13,7 +13,8 @@ type ZipVolume struct {
 	path   string
 }
 
-func NewZipVolume(path string, volume Volume) *ZipVolume {
+// NewZipVolume returns a new volume.
+func NewZipVolume(path string, volume Volume) Volume {
 	return &ZipVolume{volume: volume, path: path}
 }
 

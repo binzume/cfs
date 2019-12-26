@@ -74,6 +74,11 @@ func TestAutoUnzipVolume_Open(t *testing.T) {
 		log.Println(f)
 	}
 
+	_, err = vol.Stat("test.zip/:/test.txt")
+	if err != nil {
+		t.Errorf("error: %v", err)
+	}
+
 	r, err := vol.Open("test.zip/:/test.txt")
 	if err != nil {
 		t.Errorf("error: %v", err)
@@ -86,5 +91,22 @@ func TestAutoUnzipVolume_Open(t *testing.T) {
 	if string(b) != "Hello" {
 		t.Errorf("unexpexted string: %v", string(b))
 	}
+}
 
+func TestHttpVolume_ReadAt(t *testing.T) {
+	var vol = NewZipVolume("testdata/test.zip", nil)
+
+	r, err := vol.Open("test.txt")
+	if err != nil {
+		t.Errorf("error: %v", err)
+	}
+	defer r.Close()
+	b := make([]byte, 4)
+	n, err := r.ReadAt(b, 1)
+	if err != nil {
+		t.Errorf("error: %v", err)
+	}
+	if n != len(b) {
+		t.Errorf("length error: %v != %v", n, len(b))
+	}
 }

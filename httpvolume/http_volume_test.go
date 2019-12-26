@@ -69,6 +69,25 @@ func TestHttpVolume_Open(t *testing.T) {
 		t.Errorf("unexpected error: %v", err)
 		r.Close()
 	}
+
+	// lazy
+	var vol2 = NewHTTPVolume(testURL, true)
+	r, err = vol2.Open("notfound.txt")
+	if err != nil {
+		t.Errorf("error: %v", err)
+	}
+	defer r.Close()
+	_, err = ioutil.ReadAll(r)
+	if err == nil {
+		t.Errorf("should return error")
+	}
+}
+
+func TestHttpVolume_ReadDir(t *testing.T) {
+	var vol = NewHTTPVolume(testURL, false)
+
+	// TODO
+	_, _ = vol.ReadDir("")
 }
 
 func TestHttpVolume_ReadAt(t *testing.T) {

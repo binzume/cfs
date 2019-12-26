@@ -40,3 +40,14 @@ func TestLocalVolume_Open(t *testing.T) {
 		t.Errorf("unexpexted string: %v", string(b))
 	}
 }
+
+func TestLocalVolume_Watch(t *testing.T) {
+	var vol = NewLocalVolume("./testdata")
+
+	c, err := vol.Watch(func(FileEvent) {})
+	if err != nil {
+		t.Errorf("error: %v", err)
+	}
+	defer c.Close()
+
+}
