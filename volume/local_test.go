@@ -12,6 +12,31 @@ func TestLocalVolume(t *testing.T) {
 	var _ VolumeWatcher = vol
 	var _ VolumeWalker = vol
 }
+
+func TestLocalVolume_Stat(t *testing.T) {
+	var vol = NewLocalVolume("./testdata")
+
+	stat, err := vol.Stat("test.txt")
+	if err != nil {
+		t.Errorf("error: %v", err)
+	}
+	if stat.Name() != "test.txt" {
+		t.Errorf("unexpected name: %v", stat.Name())
+	}
+
+	if stat.Size() <= 0 {
+		t.Errorf("unexpected size: %v", stat.Size())
+	}
+
+	if stat.ModTime().IsZero() {
+		t.Errorf("ModTime is zero")
+	}
+
+	if stat.IsDir() || stat.Mode().IsDir() {
+		t.Errorf("IsDir")
+	}
+}
+
 func TestLocalVolume_ReadDir(t *testing.T) {
 	var vol = NewLocalVolume("./testdata")
 

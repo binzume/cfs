@@ -4,6 +4,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"syscall"
 )
 
 type volumeWrapper struct {
@@ -57,6 +58,17 @@ func (v *volumeWrapper) Mkdir(path string, perm os.FileMode) error {
 }
 
 func (v *volumeWrapper) OpenFile(path string, flag int, perm os.FileMode) (File, error) {
+	if flag == syscall.O_RDONLY {
+		f, err := v.Open(path)
+		if err != nil {
+			return nil, err
+		}
+		return &struct {
+			FileReadCloser
+			io.WriterAt
+			io.Writer
+		}{f, nil, nil}, nil
+	}
 	if !v.writable {
 		return nil, permissionError("OpenFile", path)
 	}

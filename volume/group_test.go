@@ -19,10 +19,12 @@ func newTestVolumeGroup() *VolumeGroup {
 }
 
 func TestVolumeGroup(t *testing.T) {
-	var vol = newTestVolumeGroup()
+	var vol = NewVolumeGroup()
 	var _ VolumeWriter = vol
 	var _ VolumeWatcher = vol
 	var _ VolumeWalker = vol
+	vol.AddVolume("hoge", NewStubVolume())
+	vol.Clear()
 }
 
 func TestVolumeGroup_Stat(t *testing.T) {
@@ -87,4 +89,20 @@ func TestVolumeGroup_Walk(t *testing.T) {
 	vgroup.Walk(func(f *FileInfo) {
 		log.Println(f)
 	})
+}
+
+func TestVolumeGroup_Create(t *testing.T) {
+	vol := newTestVolumeGroup()
+
+	w, err := vol.Create("hoge/created.txt")
+	if err != nil {
+		t.Errorf("error: %v", err)
+	}
+	w.Write([]byte("hello"))
+	w.Close()
+
+	err = vol.Remove("hoge/created.txt")
+	if err != nil {
+		t.Errorf("error: %v", err)
+	}
 }

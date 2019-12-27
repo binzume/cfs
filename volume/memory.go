@@ -74,15 +74,3 @@ func (v *OnMemoryVolume) get(path string) []byte {
 	defer v.lock.RUnlock()
 	return v.files[path]
 }
-
-func (v *OnMemoryVolume) Walk(callback func(*FileInfo)) error {
-	for name, data := range v.files {
-		callback(&FileInfo{
-			IsDirectory: false,
-			FileSize:    int64(len(data)),
-			UpdatedTime: time.Time{},
-			Path:        name,
-		})
-	}
-	return nil
-}

@@ -43,50 +43,30 @@ func (vg *VolumeGroup) Stat(path string) (*FileInfo, error) {
 
 func (vg *VolumeGroup) Remove(path string) error {
 	if v, p, ok := vg.resolve(path); ok {
-		if vw, ok := v.(VolumeWriter); ok {
-			return vw.Remove(p)
-		}
+		return v.Remove(p)
 	}
-	return unsupportedError("Remove", path)
+	return noentError("Remove", path)
 }
 
 func (vg *VolumeGroup) Mkdir(path string, perm os.FileMode) error {
 	if v, p, ok := vg.resolve(path); ok {
-		if vw, ok := v.(VolumeWriter); ok {
-			return vw.Mkdir(p, perm)
-		}
+		return v.Mkdir(p, perm)
 	}
-	return unsupportedError("Mkdir", path)
+	return noentError("Mkdir", path)
 }
 
 func (vg *VolumeGroup) Create(path string) (FileWriteCloser, error) {
 	if v, p, ok := vg.resolve(path); ok {
-		if vw, ok := v.(VolumeWriter); ok {
-			return vw.Create(p)
-		}
+		return v.Create(p)
 	}
-	return nil, unsupportedError("Create", path)
+	return nil, noentError("Create", path)
 }
 
 func (vg *VolumeGroup) OpenFile(path string, flag int, perm os.FileMode) (File, error) {
 	if v, p, ok := vg.resolve(path); ok {
-		if vw, ok := v.(VolumeWriter); ok {
-			return vw.OpenFile(p, flag, perm)
-		}
-		if flag == 0 {
-			// readonly
-			f, err := v.Open(p)
-			if err != nil {
-				return nil, err
-			}
-			return &struct {
-				FileReadCloser
-				io.WriterAt
-				io.Writer
-			}{f, nil, nil}, nil
-		}
+		return v.OpenFile(p, flag, perm)
 	}
-	return nil, unsupportedError("OpenFile", path)
+	return nil, noentError("OpenFile", path)
 }
 
 func (vg *VolumeGroup) ReadDir(path string) ([]*FileInfo, error) {
@@ -169,7 +149,7 @@ func (vg *VolumeGroup) Watch(callback func(f FileEvent)) (io.Closer, error) {
 	return &multiCloser{closers}, nil
 }
 
-func (vg *VolumeGroup) resolve(path string) (Volume, string, bool) {
+func (vg *VolumeGroup) resolve(path string) (FS, string, bool) {
 	vg.lock.RLock()
 	defer vg.lock.RUnlock()
 	for _, e := range vg.vv {
@@ -177,13 +157,13 @@ func (vg *VolumeGroup) resolve(path string) (Volume, string, bool) {
 			continue
 		}
 		if e.p == path {
-			return e.v, "", true
+			return ToFS(e.v), "", true
 		}
 		if e.p == "" {
-			return e.v, path, true
+			return ToFS(e.v), path, true
 		}
 		if strings.HasPrefix(path, e.p+"/") {
-			return e.v, path[len(e.p)+1:], true
+			return ToFS(e.v), path[len(e.p)+1:], true
 		}
 	}
 	return nil, "", false
