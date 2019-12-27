@@ -2,6 +2,7 @@ package volume
 
 import (
 	"bytes"
+	"os"
 	"sync"
 	"time"
 )
@@ -12,9 +13,6 @@ type OnMemoryVolume struct {
 }
 
 func NewOnMemoryVolume(init map[string][]byte) *OnMemoryVolume {
-	if init == nil {
-		init = make(map[string][]byte)
-	}
 	return &OnMemoryVolume{files: init}
 }
 
@@ -24,13 +22,13 @@ func (v *OnMemoryVolume) Available() bool {
 
 func (v *OnMemoryVolume) Stat(path string) (*FileInfo, error) {
 	if path == "" {
-		return &FileInfo{Path: path, IsDirectory: true, FileSize: 0, UpdatedTime: time.Time{}}, nil
+		return &FileInfo{Path: path, FileMode: os.ModeDir, FileSize: 0, UpdatedTime: time.Time{}}, nil
 	}
 	data := v.get(path)
 	if data == nil {
 		return nil, noentError("Stat", path)
 	}
-	return &FileInfo{Path: path, IsDirectory: false, FileSize: int64(len(data)), UpdatedTime: time.Time{}}, nil
+	return &FileInfo{Path: path, FileSize: int64(len(data)), UpdatedTime: time.Time{}}, nil
 }
 
 func (v *OnMemoryVolume) Remove(path string) error {

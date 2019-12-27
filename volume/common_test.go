@@ -73,6 +73,9 @@ func testVolume(t *testing.T, vol Volume, okFiles, errorFiles, okDirs, errorDirs
 		if !stat.IsDir() {
 			t.Errorf("Stat should dir: %v", fpath)
 		}
+		if stat.Mode()&os.ModeDir == 0 {
+			t.Errorf("Stat mode should ModeDir: %v", fpath)
+		}
 
 		files, err := vol.ReadDir(fpath)
 		if err != nil {

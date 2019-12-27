@@ -85,7 +85,7 @@ func (v *ZipVolume) openZip() (io.Closer, *zip.Reader, error) {
 
 func (v *ZipVolume) Stat(path string) (*FileInfo, error) {
 	if path == "" {
-		return &FileInfo{Path: path, IsDirectory: true}, nil
+		return &FileInfo{Path: path, FileMode: os.ModeDir}, nil
 	}
 	closer, r, err := v.openZip()
 	if err != nil {
@@ -99,7 +99,7 @@ func (v *ZipVolume) Stat(path string) (*FileInfo, error) {
 		fi := f.FileInfo()
 		return &FileInfo{
 			Path:        f.Name,
-			IsDirectory: fi.IsDir(),
+			FileMode:    fi.Mode(),
 			FileSize:    fi.Size(),
 			UpdatedTime: fi.ModTime(),
 		}, nil
@@ -122,7 +122,7 @@ func (v *ZipVolume) ReadDir(path string) ([]*FileInfo, error) {
 		}
 		fe := &FileInfo{
 			Path:        f.Name,
-			IsDirectory: fi.IsDir(),
+			FileMode:    fi.Mode(),
 			FileSize:    fi.Size(),
 			UpdatedTime: fi.ModTime(),
 		}

@@ -26,7 +26,7 @@ func newLocalFileEntry(path string, info os.FileInfo, v *LocalVolume) *FileInfo 
 		FileSize:    info.Size(),
 		UpdatedTime: info.ModTime(),
 		CreatedTime: time.Unix(0, GetCTime(info)),
-		IsDirectory: info.IsDir(),
+		FileMode:    info.Mode(),
 	}
 }
 
@@ -40,7 +40,7 @@ func (v *LocalVolume) Stat(path string) (*FileInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &FileInfo{Path: path, IsDirectory: fi.IsDir(), FileSize: fi.Size(), UpdatedTime: fi.ModTime()}, nil
+	return &FileInfo{Path: path, FileMode: fi.Mode(), FileSize: fi.Size(), UpdatedTime: fi.ModTime()}, nil
 }
 
 func (v *LocalVolume) ReadDir(path string) ([]*FileInfo, error) {

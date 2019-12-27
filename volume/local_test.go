@@ -3,6 +3,7 @@ package volume
 import (
 	"io/ioutil"
 	"log"
+	"os"
 	"testing"
 )
 
@@ -39,6 +40,18 @@ func TestLocalVolume_Stat(t *testing.T) {
 
 	if stat.ModTime().IsZero() {
 		t.Errorf("ModTime is zero")
+	}
+
+	stat = SetMetadata(stat, "meta", 123)
+	if GetMetadata(stat, "meta").(int) != 123 {
+		t.Errorf("Metadata error")
+	}
+	if _, ok := stat.Sys().(map[string]interface{}); !ok {
+		t.Errorf("Metadata type error")
+	}
+	osstat, _ := os.Stat("./testdata")
+	if GetMetadata(osstat, "meta") != nil {
+		t.Errorf("Metadata error")
 	}
 }
 

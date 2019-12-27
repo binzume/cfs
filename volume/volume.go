@@ -55,7 +55,7 @@ type FileInfo struct {
 	FileSize    int64                  `json:"size"`
 	CreatedTime time.Time              `json:"created_time"`
 	UpdatedTime time.Time              `json:"updated_time"`
-	IsDirectory bool                   `json:"is_directory"`
+	FileMode    os.FileMode            `json:"file_mode"`
 	Metadata    map[string]interface{} `json:"metadata"`
 }
 
@@ -72,14 +72,11 @@ func (f *FileInfo) Size() int64 {
 }
 
 func (f *FileInfo) IsDir() bool {
-	return f.IsDirectory
+	return f.FileMode&os.ModeDir != 0
 }
 
 func (f *FileInfo) Mode() os.FileMode {
-	if f.IsDir() {
-		return os.ModeDir
-	}
-	return 0
+	return f.FileMode
 }
 
 func (f *FileInfo) Sys() interface{} {
@@ -104,6 +101,22 @@ type FS interface {
 	VolumeWriter
 	VolumeWalker
 	VolumeWatcher
+}
+
+// utils
+func SetMetadata(f *FileInfo, key string, value interface{}) *FileInfo {
+	if f.Metadata == nil {
+		f.Metadata = map[string]interface{}{}
+	}
+	f.Metadata[key] = value
+	return f
+}
+
+func GetMetadata(f os.FileInfo, key string) interface{} {
+	if fi, ok := f.(*FileInfo); ok && fi.Metadata != nil {
+		return fi.Metadata[key]
+	}
+	return nil
 }
 
 var NoentError = errors.New("noent")

@@ -53,7 +53,7 @@ func (vg *VolumeGroup) Stat(path string) (*FileInfo, error) {
 	defer vg.lock.RUnlock()
 	for _, e := range vg.vv {
 		if e.v.Available() && strings.HasPrefix(e.p, path) {
-			return &FileInfo{IsDirectory: true, Path: path}, nil
+			return &FileInfo{FileMode: os.ModeDir, Path: path}, nil
 		}
 	}
 
@@ -111,7 +111,7 @@ func (vg *VolumeGroup) ReadDir(path string) ([]*FileInfo, error) {
 	for _, e := range vg.vv {
 		if e.v.Available() && strings.HasPrefix(e.p, path) {
 			n := strings.Split(e.p[len(path):], "/")[0]
-			files = append(files, &FileInfo{IsDirectory: true, Path: n})
+			files = append(files, &FileInfo{FileMode: os.ModeDir, Path: n})
 		}
 	}
 	if !resolved && len(files) == 0 {
