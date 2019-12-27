@@ -8,7 +8,7 @@ cfs: C***** File System
 
 ```
         +-----------+
-        |    hub    |
+        |  cfs hub  |
         +-----------+
           ^       ^
   publish |       | mount

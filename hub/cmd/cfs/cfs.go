@@ -10,8 +10,8 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/binzume/cfs/fuse"
+	"github.com/binzume/cfs/hub/wsvolume"
 	"github.com/binzume/cfs/volume"
-	"github.com/binzume/cfs/ws_volume"
 )
 
 var defaultHubAPI = "http://localhost:8080"
@@ -67,7 +67,7 @@ func publish(localPath, volumePath string, writable bool) error {
 			if event["action"] == "connect" {
 				newConn, err := Connect(event["ws_url"], "", "") // TODO
 				if err == nil {
-					go ws_volume.ConnectClient(v, newConn, event["target"])
+					go wsvolume.ConnectClient(v, newConn, event["target"])
 				}
 			}
 		}
@@ -82,11 +82,11 @@ func publish(localPath, volumePath string, writable bool) error {
 func mount(volumePath, mountPoint string) error {
 	log.Println("mount ", volumePath, " to ", mountPoint)
 
-	connector := func(v *ws_volume.RemoteVolume) (*websocket.Conn, error) {
+	connector := func(v *wsvolume.RemoteVolume) (*websocket.Conn, error) {
 		return ConnectViaPloxy(v.Name, hubToken())
 	}
 
-	v := ws_volume.NewRemoteVolume(volumePath, connector)
+	v := wsvolume.NewRemoteVolume(volumePath, connector)
 	volumeExit, err := v.Start()
 	if err != nil {
 		log.Println("connect error: ", err)

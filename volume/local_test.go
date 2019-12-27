@@ -79,5 +79,4 @@ func TestLocalVolume_Watch(t *testing.T) {
 		t.Errorf("error: %v", err)
 	}
 	defer c.Close()
-
 }

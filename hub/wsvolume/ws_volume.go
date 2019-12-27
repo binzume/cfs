@@ -1,4 +1,4 @@
-package ws_volume
+package wsvolume
 
 import (
 	"errors"
