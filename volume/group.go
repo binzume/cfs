@@ -36,9 +36,28 @@ func (vg *VolumeGroup) Clear() {
 
 func (vg *VolumeGroup) Stat(path string) (*FileInfo, error) {
 	if v, p, ok := vg.resolve(path); ok {
-		return v.Stat(p)
+		stat, err := v.Stat(p)
+		if stat != nil {
+			stat.Path = path
+		}
+		return stat, err
 	}
-	return &FileInfo{Path: path, IsDirectory: true}, nil
+
+	if strings.HasPrefix(path, "/") {
+		path = path[1:]
+	}
+	if path != "" {
+		path += "/"
+	}
+	vg.lock.RLock()
+	defer vg.lock.RUnlock()
+	for _, e := range vg.vv {
+		if e.v.Available() && strings.HasPrefix(e.p, path) {
+			return &FileInfo{IsDirectory: true, Path: path}, nil
+		}
+	}
+
+	return nil, noentError("Stat", path)
 }
 
 func (vg *VolumeGroup) Remove(path string) error {
@@ -72,10 +91,18 @@ func (vg *VolumeGroup) OpenFile(path string, flag int, perm os.FileMode) (File, 
 func (vg *VolumeGroup) ReadDir(path string) ([]*FileInfo, error) {
 	files := []*FileInfo{} // TODO uniq.
 
+	resolved := false
 	if v, p, ok := vg.resolve(path); ok {
-		files, _ = v.ReadDir(p)
+		ff, err := v.ReadDir(p)
+		if err == nil {
+			resolved = true
+			files = ff
+		}
 	}
 
+	if strings.HasPrefix(path, "/") {
+		path = path[1:]
+	}
 	if path != "" {
 		path += "/"
 	}
@@ -86,6 +113,9 @@ func (vg *VolumeGroup) ReadDir(path string) ([]*FileInfo, error) {
 			n := strings.Split(e.p[len(path):], "/")[0]
 			files = append(files, &FileInfo{IsDirectory: true, Path: n})
 		}
+	}
+	if !resolved && len(files) == 0 {
+		return nil, noentError("ReadDir", path)
 	}
 	return files, nil
 }
@@ -150,6 +180,9 @@ func (vg *VolumeGroup) Watch(callback func(f FileEvent)) (io.Closer, error) {
 }
 
 func (vg *VolumeGroup) resolve(path string) (FS, string, bool) {
+	if strings.HasPrefix(path, "/") {
+		path = path[1:]
+	}
 	vg.lock.RLock()
 	defer vg.lock.RUnlock()
 	for _, e := range vg.vv {

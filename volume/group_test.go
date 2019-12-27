@@ -2,7 +2,6 @@ package volume
 
 import (
 	"io/ioutil"
-	"log"
 	"testing"
 )
 
@@ -19,42 +18,27 @@ func newTestVolumeGroup() *VolumeGroup {
 }
 
 func TestVolumeGroup(t *testing.T) {
-	var vol = NewVolumeGroup()
+	var vol = newTestVolumeGroup()
 	var _ VolumeWriter = vol
 	var _ VolumeWatcher = vol
 	var _ VolumeWalker = vol
-	vol.AddVolume("hoge", NewStubVolume())
+	var _ FS = vol
+
+	testVolume(t, vol,
+		[]string{"/hoge/test.txt", "/hoge/test.zip", "mem/hoge2/hello.txt"},
+		[]string{"/not_existing_file", "/hoge/not_existing_dir/hello.txt"},
+		[]string{"", "mem", "mem/hoge2", "/mem"},
+		[]string{"/not_existing_dir", "/hoge/not_existing_dir"},
+	)
+	testVolumeWriter(t, vol,
+		[]string{"hoge/created.txt"},
+		[]string{"not_existing/test.txt"},
+		[]string{},
+		[]string{"not_existing/testdir", "mem/testdir"},
+	)
+
 	vol.Clear()
 }
-
-func TestVolumeGroup_Stat(t *testing.T) {
-	var vol Volume = newTestVolumeGroup()
-
-	st, err := vol.Stat("")
-	if err != nil {
-		t.Fatalf("error: %v", err)
-	}
-	if !st.IsDir() {
-		t.Fatalf("stat err: %v", st)
-	}
-
-	st, err = vol.Stat("hoge/test.txt")
-	if err != nil {
-		t.Fatalf("error: %v", err)
-	}
-	if st.Size() == 0 {
-		t.Fatalf("stat err: %v", st)
-	}
-
-	st, err = vol.Stat("mem/hoge2")
-	if err != nil {
-		t.Fatalf("error: %v", err)
-	}
-	if !st.IsDir() {
-		t.Fatalf("stat err: %v", st)
-	}
-}
-
 func TestVolumeGroup_Open(t *testing.T) {
 	vol := newTestVolumeGroup()
 
@@ -69,40 +53,5 @@ func TestVolumeGroup_Open(t *testing.T) {
 	}
 	if string(b) != "Hello" {
 		t.Errorf("unexpexted string: %v", string(b))
-	}
-}
-
-func TestVolumeGroup_ReadDir(t *testing.T) {
-	vol := newTestVolumeGroup()
-
-	files, err := vol.ReadDir("mem/hoge2")
-	if err != nil {
-		t.Errorf("error: %v", err)
-	}
-	for _, f := range files {
-		log.Println(f)
-	}
-}
-
-func TestVolumeGroup_Walk(t *testing.T) {
-	vgroup := newTestVolumeGroup()
-	vgroup.Walk(func(f *FileInfo) {
-		log.Println(f)
-	})
-}
-
-func TestVolumeGroup_Create(t *testing.T) {
-	vol := newTestVolumeGroup()
-
-	w, err := vol.Create("hoge/created.txt")
-	if err != nil {
-		t.Errorf("error: %v", err)
-	}
-	w.Write([]byte("hello"))
-	w.Close()
-
-	err = vol.Remove("hoge/created.txt")
-	if err != nil {
-		t.Errorf("error: %v", err)
 	}
 }

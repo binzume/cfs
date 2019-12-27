@@ -11,6 +11,19 @@ func TestLocalVolume(t *testing.T) {
 	var _ VolumeWriter = vol
 	var _ VolumeWatcher = vol
 	var _ VolumeWalker = vol
+
+	testVolume(t, vol,
+		[]string{"/test.txt", "/test.zip", "test.txt"},
+		[]string{"/not_existing_file", "/not_existing_dir/hello.txt"},
+		[]string{"/", "./"},
+		[]string{"/not_existing_dir"},
+	)
+	testVolumeWriter(t, vol,
+		[]string{"created.txt"},
+		[]string{"not_existing/test.txt"},
+		[]string{},
+		[]string{"not_existing/testdir"},
+	)
 }
 
 func TestLocalVolume_Stat(t *testing.T) {
@@ -20,20 +33,12 @@ func TestLocalVolume_Stat(t *testing.T) {
 	if err != nil {
 		t.Errorf("error: %v", err)
 	}
-	if stat.Name() != "test.txt" {
-		t.Errorf("unexpected name: %v", stat.Name())
-	}
-
 	if stat.Size() <= 0 {
 		t.Errorf("unexpected size: %v", stat.Size())
 	}
 
 	if stat.ModTime().IsZero() {
 		t.Errorf("ModTime is zero")
-	}
-
-	if stat.IsDir() || stat.Mode().IsDir() {
-		t.Errorf("IsDir")
 	}
 }
 

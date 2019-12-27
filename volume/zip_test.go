@@ -7,20 +7,14 @@ import (
 )
 
 func TestZipVolume(t *testing.T) {
-	var vol Volume = NewZipVolume("testdata/test.zip", nil)
+	vol := NewZipVolume("testdata/test.zip", nil)
 
-	if !vol.Available() {
-		t.Fatal("volume is unavailable")
-	}
-
-	files, err := vol.ReadDir("")
-	if err != nil {
-		t.Errorf("error: %v", err)
-	}
-
-	for _, f := range files {
-		log.Println(f)
-	}
+	testVolume(t, vol,
+		[]string{"test.txt"},
+		[]string{"not_existing_file", "not_existing_dir/test.txt"},
+		[]string{""},
+		[]string{},
+	)
 }
 
 func TestZipVolume_Open(t *testing.T) {
@@ -38,11 +32,6 @@ func TestZipVolume_Open(t *testing.T) {
 	if string(b) != "Hello" {
 		t.Errorf("unexpexted string: %v", string(b))
 	}
-
-	_, err = vol.Open("notfound.txt")
-	if err == nil {
-		t.Errorf("unexpected error: %v", err)
-	}
 }
 
 func TestZipVolume_Stat(t *testing.T) {
@@ -55,15 +44,17 @@ func TestZipVolume_Stat(t *testing.T) {
 	if stat.Size() == 0 {
 		t.Errorf("unexpexted size: %v", stat.Size())
 	}
-
-	_, err = vol.Stat("notfound.txt")
-	if err == nil {
-		t.Errorf("unexpected error: %v", err)
-	}
 }
 
 func TestAutoUnzipVolume_Open(t *testing.T) {
 	var vol = NewAutoUnzipVolume(NewLocalVolume("./testdata"))
+
+	testVolume(t, vol,
+		[]string{"test.zip", "test.zip/:/test.txt"},
+		[]string{"not_existing_file", "not_existing.zip/:/test.txt", "test.zip/:/not_existing"},
+		[]string{"test.zip/:/", ""},
+		[]string{"not_existing", "not_existing.zip/:/test.txt", "test.txt/:/hello"},
+	)
 
 	files, err := vol.ReadDir("test.zip")
 	if err != nil {
@@ -72,11 +63,6 @@ func TestAutoUnzipVolume_Open(t *testing.T) {
 
 	for _, f := range files {
 		log.Println(f)
-	}
-
-	_, err = vol.Stat("test.zip/:/test.txt")
-	if err != nil {
-		t.Errorf("error: %v", err)
 	}
 
 	r, err := vol.Open("test.zip/:/test.txt")

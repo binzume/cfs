@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"syscall"
 )
 
 type ZipVolume struct {
@@ -83,6 +84,9 @@ func (v *ZipVolume) openZip() (io.Closer, *zip.Reader, error) {
 }
 
 func (v *ZipVolume) Stat(path string) (*FileInfo, error) {
+	if path == "" {
+		return &FileInfo{Path: path, IsDirectory: true}, nil
+	}
 	closer, r, err := v.openZip()
 	if err != nil {
 		return nil, err
@@ -151,15 +155,15 @@ func (v *ZipVolume) Open(path string) (reader FileReadCloser, err error) {
 
 const zipSep = ":"
 
-type ZipAsDirVolume struct {
+type AutoUnzipVolume struct {
 	FS
 }
 
 func NewAutoUnzipVolume(v Volume) Volume {
-	return &ZipAsDirVolume{ToFS(v)}
+	return &AutoUnzipVolume{ToFS(v)}
 }
 
-func (v *ZipAsDirVolume) Open(path string) (reader FileReadCloser, err error) {
+func (v *AutoUnzipVolume) Open(path string) (reader FileReadCloser, err error) {
 	reader, err = v.FS.Open(path)
 	if err == nil {
 		return
@@ -172,7 +176,7 @@ func (v *ZipAsDirVolume) Open(path string) (reader FileReadCloser, err error) {
 	return nil, err
 }
 
-func (v *ZipAsDirVolume) Stat(path string) (stat *FileInfo, err error) {
+func (v *AutoUnzipVolume) Stat(path string) (stat *FileInfo, err error) {
 	stat, err = v.FS.Stat(path)
 	if err == nil {
 		return
@@ -180,24 +184,44 @@ func (v *ZipAsDirVolume) Stat(path string) (stat *FileInfo, err error) {
 	pathAndName := strings.SplitN(path, "/"+zipSep+"/", 2)
 	if len(pathAndName) == 2 && strings.HasSuffix(pathAndName[0], ".zip") {
 		zv := &ZipVolume{v.FS, pathAndName[0]}
-		return zv.Stat(pathAndName[1])
+		stat, err := zv.Stat(pathAndName[1])
+		if stat != nil {
+			stat.Path = pathAndName[0] + "/" + zipSep + "/" + stat.Path
+		}
+		return stat, err
 	}
 	return nil, err
 }
 
-func (v *ZipAsDirVolume) ReadDir(path string) (files []*FileInfo, err error) {
+func (v *AutoUnzipVolume) ReadDir(path string) (files []*FileInfo, err error) {
 	files, err = v.FS.ReadDir(path)
 	if err == nil {
 		return
 	}
+	pathAndName := strings.SplitN(path, "/"+zipSep+"/", 2)
 
-	fi, err2 := v.Stat(path)
-	if err2 == nil && !fi.IsDir() && strings.HasSuffix(path, ".zip") {
-		zv := &ZipVolume{v.FS, path}
+	fi, err2 := v.Stat(pathAndName[0])
+	if err2 == nil && !fi.IsDir() && strings.HasSuffix(pathAndName[0], ".zip") {
+		zv := &ZipVolume{v.FS, pathAndName[0]}
 		files, err = zv.ReadDir("")
 		for _, fi := range files {
 			fi.Path = zipSep + "/" + fi.Path
 		}
 	}
 	return
+}
+
+func (v *AutoUnzipVolume) OpenFile(path string, flag int, mode os.FileMode) (File, error) {
+	if flag == syscall.O_RDONLY {
+		f, err := v.Open(path)
+		if err != nil {
+			return nil, err
+		}
+		return &struct {
+			FileReadCloser
+			io.WriterAt
+			io.Writer
+		}{f, nil, nil}, nil
+	}
+	return v.FS.OpenFile(path, flag, mode)
 }

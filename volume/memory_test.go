@@ -7,6 +7,19 @@ import (
 	"testing"
 )
 
+func TestOnMemoryVolume(t *testing.T) {
+	vol := NewOnMemoryVolume(map[string][]byte{
+		"hello.txt": []byte("Hello"),
+		"hoge.txt":  []byte("World"),
+	})
+	testVolume(t, vol,
+		[]string{"hello.txt", "hoge.txt"},
+		[]string{"not_existing_file", "not_existing_dir/hello.txt"},
+		[]string{""},
+		[]string{},
+	)
+}
+
 func TestOnMemoryVolume_ReadDir(t *testing.T) {
 	var vol Volume = NewOnMemoryVolume(map[string][]byte{
 		"hello.txt": []byte("Hello"),
@@ -39,12 +52,6 @@ func TestOnMemoryVolume_Open(t *testing.T) {
 	if string(b) != "Hello" {
 		t.Errorf("unexpexted string: %v", string(b))
 	}
-
-	// NotFound
-	_, err = vol.Stat("notfound")
-	if _, ok := err.(*os.PathError); !ok {
-		t.Errorf("should return pathError. err: %v", err)
-	}
 }
 
 func TestOnMemoryVolume_Stat(t *testing.T) {
@@ -57,13 +64,8 @@ func TestOnMemoryVolume_Stat(t *testing.T) {
 	if err != nil {
 		t.Errorf("error: %v", err)
 	}
-
 	if stat.Size() != 5 {
 		t.Errorf("size: %v", stat.Size())
-	}
-
-	if stat.IsDir() {
-		t.Errorf("directory")
 	}
 }
 

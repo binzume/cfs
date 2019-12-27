@@ -29,32 +29,23 @@ func (fs *volumeWrapper) Watch(callback func(FileEvent)) (io.Closer, error) {
 }
 
 func (v *volumeWrapper) Create(path string) (FileWriteCloser, error) {
-	if !v.writable {
-		return nil, permissionError("Create", path)
-	}
-	if w, ok := v.Volume.(VolumeWriter); ok {
+	if w, ok := v.Volume.(VolumeWriter); ok && v.writable {
 		return w.Create(path)
 	}
-	return nil, unsupportedError("Create", path)
+	return nil, permissionError("Create", path)
 }
 
 func (v *volumeWrapper) Remove(path string) error {
-	if !v.writable {
-		return permissionError("Remove", path)
-	}
-	if w, ok := v.Volume.(VolumeWriter); ok {
+	if w, ok := v.Volume.(VolumeWriter); ok && v.writable {
 		return w.Remove(path)
 	}
-	return unsupportedError("Remove", path)
+	return permissionError("Remove", path)
 }
 func (v *volumeWrapper) Mkdir(path string, perm os.FileMode) error {
-	if !v.writable {
-		return permissionError("Mkdir", path)
-	}
-	if w, ok := v.Volume.(VolumeWriter); ok {
+	if w, ok := v.Volume.(VolumeWriter); ok && v.writable {
 		return w.Mkdir(path, perm)
 	}
-	return unsupportedError("Mkdir", path)
+	return permissionError("Mkdir", path)
 }
 
 func (v *volumeWrapper) OpenFile(path string, flag int, perm os.FileMode) (File, error) {
@@ -69,24 +60,10 @@ func (v *volumeWrapper) OpenFile(path string, flag int, perm os.FileMode) (File,
 			io.Writer
 		}{f, nil, nil}, nil
 	}
-	if !v.writable {
-		return nil, permissionError("OpenFile", path)
-	}
-	if w, ok := v.Volume.(VolumeWriter); ok {
+	if w, ok := v.Volume.(VolumeWriter); ok && v.writable {
 		return w.OpenFile(path, flag, perm)
 	}
-	return nil, unsupportedError("OpenFile", path)
-}
-
-func (fs *volumeWrapper) WalkCh() <-chan *FileInfo {
-	fch := make(chan *FileInfo)
-	go func() {
-		defer close(fch)
-		fs.Walk(func(f *FileInfo) {
-			fch <- f
-		})
-	}()
-	return fch
+	return nil, permissionError("OpenFile", path)
 }
 
 func walk(v Volume, callback func(*FileInfo)) error {
@@ -119,5 +96,5 @@ func watch(v Volume, callback func(FileEvent)) (io.Closer, error) {
 	if w, ok := v.(VolumeWatcher); ok {
 		return w.Watch(callback)
 	}
-	return nil, unsupportedError("watch", "")
+	return nil, unsupportedError("Watch", "")
 }
