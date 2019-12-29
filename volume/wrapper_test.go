@@ -10,8 +10,8 @@ func TestVolumeWrapper(t *testing.T) {
 		"hello.txt": []byte("Hello"),
 		"hoge.txt":  []byte("World"),
 	})
-
 	var fs FS = ToFS(vol)
+
 	testVolume(t, fs,
 		[]string{"hello.txt"},
 		[]string{"aaaa"},
@@ -29,4 +29,15 @@ func TestVolumeWrapper(t *testing.T) {
 	if _, ok := err.(*os.PathError); !ok {
 		t.Errorf("should return pathError. err: %v", err)
 	}
+
+	maskedFs := &struct {
+		Volume
+		VolumeWriter
+	}{fs, fs}
+	testVolumeWriter(t, ToFS(maskedFs),
+		[]string{},
+		[]string{"create.txt"},
+		[]string{},
+		[]string{"testdir"},
+	)
 }

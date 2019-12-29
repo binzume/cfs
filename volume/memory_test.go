@@ -2,7 +2,6 @@ package volume
 
 import (
 	"io/ioutil"
-	"log"
 	"os"
 	"testing"
 )
@@ -18,21 +17,6 @@ func TestOnMemoryVolume(t *testing.T) {
 		[]string{""},
 		[]string{},
 	)
-}
-
-func TestOnMemoryVolume_ReadDir(t *testing.T) {
-	var vol Volume = NewOnMemoryVolume(map[string][]byte{
-		"hello.txt": []byte("Hello"),
-		"hoge.txt":  []byte("World"),
-	})
-
-	files, err := vol.ReadDir("")
-	if err != nil {
-		t.Errorf("error: %v", err)
-	}
-	for _, f := range files {
-		log.Println(f)
-	}
 }
 
 func TestOnMemoryVolume_Open(t *testing.T) {

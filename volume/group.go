@@ -25,7 +25,7 @@ func NewVolumeGroup() *VolumeGroup {
 func (vg *VolumeGroup) AddVolume(path string, v Volume) {
 	vg.lock.Lock()
 	defer vg.lock.Unlock()
-	vg.vv = append(vg.vv, volumeGroupEntry{path, v})
+	vg.vv = append(vg.vv, volumeGroupEntry{strings.TrimPrefix(path, "/"), v})
 }
 
 func (vg *VolumeGroup) Clear() {
@@ -154,8 +154,7 @@ type multiCloser struct {
 
 func (c *multiCloser) Close() (err error) {
 	for _, closer := range c.closers {
-		e := closer.Close()
-		if e != nil {
+		if e := closer.Close(); e != nil {
 			err = e
 		}
 	}
@@ -180,20 +179,15 @@ func (vg *VolumeGroup) Watch(callback func(f FileEvent)) (io.Closer, error) {
 }
 
 func (vg *VolumeGroup) resolve(path string) (FS, string, bool) {
-	if strings.HasPrefix(path, "/") {
-		path = path[1:]
-	}
+	path = strings.TrimPrefix(path, "/")
 	vg.lock.RLock()
 	defer vg.lock.RUnlock()
 	for _, e := range vg.vv {
 		if !e.v.Available() {
 			continue
 		}
-		if e.p == path {
-			return ToFS(e.v), "", true
-		}
-		if e.p == "" {
-			return ToFS(e.v), path, true
+		if e.p == "" || e.p == path {
+			return ToFS(e.v), path[len(e.p):], true
 		}
 		if strings.HasPrefix(path, e.p+"/") {
 			return ToFS(e.v), path[len(e.p)+1:], true

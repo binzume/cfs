@@ -2,9 +2,12 @@
 
 [![Build Status](https://travis-ci.com/binzume/cfs.svg?branch=master)](https://travis-ci.com/binzume/cfs)
 [![codecov](https://codecov.io/gh/binzume/cfs/branch/master/graph/badge.svg)](https://codecov.io/gh/binzume/cfs)
+[![GoDoc](https://godoc.org/github.com/binzume/cfs?status.svg)](https://godoc.org/github.com/binzume/cfs)
+[![license](https://img.shields.io/badge/license-MIT-4183c4.svg)](https://github.com/binzume/cfs/blob/master/LICENSE)
 
 - Consistent API for multiple backends.
 - Easy to implement backends.
+- FUSE support (Windows/Linux)
 
 ## Backend
 
@@ -41,6 +44,6 @@ r, err := vol.Open("bbb/data/index.html")
 ### http
 
 ```golang
-vol := volume.NewHTTPVolume("", false)
-r, err := vol.Open("http://example.com/hoge.txt")
+vol := httpvolume.NewHTTPVolume("", false)
+r, err := vol.Open("https://example.com/hoge.txt")
 ```

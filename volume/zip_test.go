@@ -55,12 +55,17 @@ func TestAutoUnzipVolume_Open(t *testing.T) {
 		[]string{"test.zip/:/", ""},
 		[]string{"not_existing", "not_existing.zip/:/test.txt", "test.txt/:/hello"},
 	)
+	testVolumeWriter(t, vol,
+		[]string{"created.txt"},
+		[]string{"not_existing/test.txt", "test.zip/:/file.txt"},
+		[]string{},
+		[]string{"not_existing/testdir", "test.zip/:/dir"},
+	)
 
 	files, err := vol.ReadDir("test.zip")
 	if err != nil {
 		t.Errorf("error: %v", err)
 	}
-
 	for _, f := range files {
 		log.Println(f)
 	}

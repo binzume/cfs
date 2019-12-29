@@ -83,6 +83,20 @@ func (f *FileInfo) Sys() interface{} {
 	return f.Metadata
 }
 
+func (f *FileInfo) SetMetadata(key string, value interface{}) {
+	if f.Metadata == nil {
+		f.Metadata = map[string]interface{}{}
+	}
+	f.Metadata[key] = value
+}
+
+func (f *FileInfo) GetMetadata(key string) interface{} {
+	if f.Metadata == nil {
+		return nil
+	}
+	return f.Metadata[key]
+}
+
 type EventType int
 
 const (
@@ -104,17 +118,17 @@ type FS interface {
 }
 
 // utils
-func SetMetadata(f *FileInfo, key string, value interface{}) *FileInfo {
-	if f.Metadata == nil {
-		f.Metadata = map[string]interface{}{}
+func SetMetadata(f os.FileInfo, key string, value interface{}) *FileInfo {
+	if fi, ok := f.(*FileInfo); ok {
+		fi.SetMetadata(key, value)
+		return fi
 	}
-	f.Metadata[key] = value
-	return f
+	return nil
 }
 
 func GetMetadata(f os.FileInfo, key string) interface{} {
-	if fi, ok := f.(*FileInfo); ok && fi.Metadata != nil {
-		return fi.Metadata[key]
+	if fi, ok := f.(*FileInfo); ok {
+		return fi.GetMetadata(key)
 	}
 	return nil
 }

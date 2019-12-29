@@ -140,6 +140,11 @@ func testVolumeWriter(t *testing.T, vol VolumeWriter, createFiles, errorFiles, m
 			t.Errorf("Open should return pathError. path: %v err: %v", fpath, err)
 		}
 
+		err = vol.Remove(fpath)
+		if _, ok := err.(*os.PathError); !ok {
+			t.Errorf("Remove should return pathError. path: %v err: %v", fpath, err)
+		}
+
 		_, err = vol.OpenFile(fpath, syscall.O_CREAT, 0)
 		if _, ok := err.(*os.PathError); !ok {
 			t.Errorf("OpenFile should return pathError. path: %v err: %v", fpath, err)

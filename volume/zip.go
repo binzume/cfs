@@ -159,7 +159,7 @@ type AutoUnzipVolume struct {
 	FS
 }
 
-func NewAutoUnzipVolume(v Volume) Volume {
+func NewAutoUnzipVolume(v Volume) FS {
 	return &AutoUnzipVolume{ToFS(v)}
 }
 

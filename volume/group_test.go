@@ -34,7 +34,7 @@ func TestVolumeGroup(t *testing.T) {
 		[]string{"hoge/created.txt"},
 		[]string{"not_existing/test.txt"},
 		[]string{},
-		[]string{"not_existing/testdir", "mem/testdir"},
+		[]string{"not_existing/testdir", "mem/hoge2/testdir"},
 	)
 
 	vol.Clear()

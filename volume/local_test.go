@@ -2,7 +2,6 @@ package volume
 
 import (
 	"io/ioutil"
-	"log"
 	"os"
 	"testing"
 )
@@ -42,28 +41,24 @@ func TestLocalVolume_Stat(t *testing.T) {
 		t.Errorf("ModTime is zero")
 	}
 
-	stat = SetMetadata(stat, "meta", 123)
-	if GetMetadata(stat, "meta").(int) != 123 {
-		t.Errorf("Metadata error")
+	if data := stat.GetMetadata("meta"); data != nil {
+		t.Errorf("Unexpected metadata: %v != nil", data)
+	}
+	if rstat := SetMetadata(stat, "meta", 123); rstat != stat {
+		t.Errorf("SetMetadata should returns FileInfo")
+	}
+	if data := GetMetadata(stat, "meta").(int); data != 123 {
+		t.Errorf("Unexpected metadata: %v != 123", data)
 	}
 	if _, ok := stat.Sys().(map[string]interface{}); !ok {
 		t.Errorf("Metadata type error")
 	}
 	osstat, _ := os.Stat("./testdata")
+	if rstat := SetMetadata(osstat, "meta", 123); rstat != nil {
+		t.Errorf("SetMetadata error: returns != nil")
+	}
 	if GetMetadata(osstat, "meta") != nil {
 		t.Errorf("Metadata error")
-	}
-}
-
-func TestLocalVolume_ReadDir(t *testing.T) {
-	var vol = NewLocalVolume("./testdata")
-
-	files, err := vol.ReadDir("")
-	if err != nil {
-		t.Errorf("error: %v", err)
-	}
-	for _, f := range files {
-		log.Println(f)
 	}
 }
 
