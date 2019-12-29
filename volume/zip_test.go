@@ -87,17 +87,36 @@ func TestAutoUnzipVolume_Open(t *testing.T) {
 func TestHttpVolume_ReadAt(t *testing.T) {
 	var vol = NewZipVolume("testdata/test.zip", nil)
 
-	r, err := vol.Open("test.txt")
-	if err != nil {
-		t.Errorf("error: %v", err)
+	{
+		// sequential read
+		r, err := vol.Open("test.txt")
+		if err != nil {
+			t.Errorf("error: %v", err)
+		}
+		defer r.Close()
+		b := make([]byte, 2)
+
+		if n, err := r.ReadAt(b, 0); err != nil || n != len(b) {
+			t.Errorf("ReadAt error: %v, read: %v", err, n)
+		}
+		if n, err := r.ReadAt(b, 2); err != nil || n != len(b) {
+			t.Errorf("ReadAt error: %v, read: %v", err, n)
+		}
 	}
-	defer r.Close()
-	b := make([]byte, 4)
-	n, err := r.ReadAt(b, 1)
-	if err != nil {
-		t.Errorf("error: %v", err)
-	}
-	if n != len(b) {
-		t.Errorf("length error: %v != %v", n, len(b))
+
+	{
+		// random read
+		r, err := vol.Open("test.txt")
+		if err != nil {
+			t.Errorf("error: %v", err)
+		}
+		defer r.Close()
+		b := make([]byte, 2)
+		if n, err := r.ReadAt(b, 2); err != nil || n != len(b) {
+			t.Errorf("ReadAt error: %v, read: %v", err, n)
+		}
+		if n, err := r.ReadAt(b, 0); err != nil || n != len(b) {
+			t.Errorf("ReadAt error: %v, read: %v", err, n)
+		}
 	}
 }

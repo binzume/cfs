@@ -20,6 +20,13 @@ func ToFS(v Volume) FS {
 	return &volumeWrapper{Volume: v, writable: writable}
 }
 
+func UnwrapVolume(v Volume) Volume {
+	if wv, ok := v.(*volumeWrapper); ok {
+		return wv.Volume
+	}
+	return v
+}
+
 func (fs *volumeWrapper) Walk(callback func(*FileInfo)) error {
 	return walk(fs.Volume, callback)
 }

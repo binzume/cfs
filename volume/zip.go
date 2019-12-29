@@ -20,30 +20,52 @@ func NewZipVolume(path string, volume Volume) Volume {
 }
 
 type zipFileReader struct {
-	io.ReadCloser
-	zipCloser  io.Closer
-	size       int64
-	byteReader *bytes.Reader
+	opener       func() (io.ReadCloser, error)
+	parentCloser io.Closer
+	size         int64
+	reader       io.ReadCloser
+	readPos      int64
+	byteReader   *bytes.Reader
+}
+
+func (zfr *zipFileReader) Read(p []byte) (n int, err error) {
+	if zfr.reader == nil {
+		zfr.reader, err = zfr.opener()
+		if err != nil {
+			return
+		}
+	}
+	n, err = zfr.reader.Read(p)
+	zfr.readPos += int64(n)
+	return
 }
 
 func (zfr *zipFileReader) Close() error {
-	zfr.ReadCloser.Close()
-	return zfr.zipCloser.Close()
+	if zfr.reader != nil {
+		zfr.reader.Close()
+	}
+	return zfr.parentCloser.Close()
 }
 
 func (zfr *zipFileReader) ReadAt(p []byte, off int64) (n int, err error) {
-	// TODO: check position
 	if zfr.byteReader == nil {
-		buf := new(bytes.Buffer)
-		sz, err := io.Copy(buf, zfr)
+		if off == zfr.readPos {
+			return zfr.Read(p)
+		}
+
+		// load all
+		// log.Printf("UNZIP READ ALL requested range: %v-%v size:(%v)", off, off+int64(len(p)), len(p))
+		r, err := zfr.opener()
 		if err != nil {
 			return 0, err
 		}
-		if sz != zfr.size {
-			// maybe already Read() has been called...
-			return 0, unsupportedError("Read", "")
+		defer r.Close()
+		buf := make([]byte, zfr.size)
+		_, err = r.Read(buf)
+		if err != nil {
+			return 0, err
 		}
-		zfr.byteReader = bytes.NewReader(buf.Bytes())
+		zfr.byteReader = bytes.NewReader(buf)
 	}
 	return zfr.byteReader.ReadAt(p, off)
 }
@@ -142,12 +164,10 @@ func (v *ZipVolume) Open(path string) (reader FileReadCloser, err error) {
 		if fi.IsDir() || !strings.HasSuffix("/"+f.Name, "/"+path) {
 			continue
 		}
-		fr, err := f.Open()
-		if err != nil {
-			closer.Close()
-			return nil, err
+		opener := func() (io.ReadCloser, error) {
+			return f.Open()
 		}
-		return &zipFileReader{fr, closer, fi.Size(), nil}, nil
+		return &zipFileReader{opener: opener, parentCloser: closer, size: fi.Size()}, nil
 	}
 	closer.Close()
 	return nil, noentError("Open", path)

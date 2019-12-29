@@ -12,6 +12,13 @@ func TestVolumeWrapper(t *testing.T) {
 	})
 	var fs FS = ToFS(vol)
 
+	if UnwrapVolume(fs) != vol {
+		t.Errorf("cannot unwrap volume")
+	}
+	if UnwrapVolume(vol) != vol {
+		t.Errorf("cannot unwrap volume")
+	}
+
 	testVolume(t, fs,
 		[]string{"hello.txt"},
 		[]string{"aaaa"},
