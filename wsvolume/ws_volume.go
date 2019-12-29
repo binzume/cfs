@@ -14,11 +14,10 @@ import (
 	"github.com/binzume/cfs/volume"
 )
 
-// RemoteVolume ...
-type RemoteVolume struct {
+// WebsocketVolume ...
+type WebsocketVolume struct {
 	Name      string
 	lock      sync.Mutex
-	connector websocketConnector
 	conn      *websocket.Conn // TODO: multiple conns
 	wch       chan map[string]interface{}
 	statCache statCache
@@ -34,13 +33,12 @@ type statCacheE struct {
 	time time.Time
 }
 
-type websocketConnector func(*RemoteVolume) (*websocket.Conn, error)
+type websocketConnector func() (*websocket.Conn, error)
 
-// NewRemoteVolume returns a new volume.
-func NewRemoteVolume(name string, conn websocketConnector) *RemoteVolume {
-	return &RemoteVolume{
+// NewWebsocketVolume returns a new volume.
+func NewWebsocketVolume(name string) *WebsocketVolume {
+	return &WebsocketVolume{
 		Name:      name,
-		connector: conn,
 		wch:       make(chan map[string]interface{}),
 		statCache: statCache{c: map[string]*statCacheE{}},
 	}
@@ -71,21 +69,38 @@ func (c *statCache) delete(path string) {
 }
 
 // Start volume backend.
-func (v *RemoteVolume) Start() (<-chan error, error) {
-	v.lock.Lock()
-	defer v.lock.Unlock()
-	errorch := make(chan error)
-
-	conn, err := v.connector(v)
+func (v *WebsocketVolume) StartClient(connector websocketConnector) (<-chan error, error) {
+	conn, err := connector()
 	if err != nil {
 		log.Println("failed to connect: ", err)
-		return errorch, err
+		return nil, err
 	}
+
+	log.Println("start volume.", v.Name)
+
+	return v.BindConnection(conn)
+}
+
+func (v *WebsocketVolume) StartClientWithDefaultConnector(wsurl string) error {
+	var connector = func() (*websocket.Conn, error) {
+		c, _, err := websocket.DefaultDialer.Dial(wsurl, nil)
+		return c, err
+	}
+	_, err := v.StartClient(connector)
+	return err
+}
+
+func (v *WebsocketVolume) BindConnection(conn *websocket.Conn) (<-chan error, error) {
+	if v.connected {
+		return nil, fmt.Errorf("Already connected")
+	}
+	v.lock.Lock()
+	defer v.lock.Unlock()
+
+	errorch := make(chan error, 1)
 	v.conn = conn
 	var data = map[string]string{}
 	v.conn.ReadJSON(data) // wait to establish.
-
-	log.Println("start volume.", v.Name)
 
 	v.connected = true
 	go func() {
@@ -102,11 +117,12 @@ func (v *RemoteVolume) Start() (<-chan error, error) {
 			count++
 		}
 	}()
+
 	return errorch, nil
 }
 
 // Stop volume backend.
-func (v *RemoteVolume) Terminate() {
+func (v *WebsocketVolume) Terminate() {
 	v.lock.Lock()
 	defer v.lock.Unlock()
 
@@ -118,7 +134,7 @@ func (v *RemoteVolume) Terminate() {
 	log.Println("terminate volume.", v.Name)
 }
 
-func (v *RemoteVolume) request(r map[string]interface{}, result interface{}) error {
+func (v *WebsocketVolume) request(r map[string]interface{}, result interface{}) error {
 	if !v.connected {
 		return fmt.Errorf("connection closed")
 	}
@@ -128,17 +144,19 @@ func (v *RemoteVolume) request(r map[string]interface{}, result interface{}) err
 	return v.conn.ReadJSON(&result)
 }
 
-func (v *RemoteVolume) Locker() sync.Locker {
+func (v *WebsocketVolume) Locker() sync.Locker {
 	return &v.lock
 }
 
-func (v *RemoteVolume) Available() bool {
+func (v *WebsocketVolume) Available() bool {
 	return v.connected
 }
 
-func (v *RemoteVolume) Stat(path string) (*volume.FileInfo, error) {
+func (v *WebsocketVolume) Stat(path string) (*volume.FileInfo, error) {
 	if s := v.statCache.get(path); s != nil {
-		return s, nil
+		stat := *s
+		stat.Path = path
+		return &stat, nil
 	}
 	var res struct {
 		S *volume.FileInfo `json:"stat"`
@@ -155,7 +173,7 @@ func (v *RemoteVolume) Stat(path string) (*volume.FileInfo, error) {
 }
 
 type fileHandle struct {
-	volume *RemoteVolume
+	volume *WebsocketVolume
 	path   string
 }
 
@@ -171,6 +189,9 @@ func (f *fileHandle) ReadAt(b []byte, offset int64) (int, error) {
 	}
 	if mt != websocket.BinaryMessage {
 		return 0, fmt.Errorf("invalid msgType")
+	}
+	if len(msg) == 0 {
+		return 0, io.EOF
 	}
 	return copy(b, msg), nil
 }
@@ -218,25 +239,25 @@ func (*fileReadWriter) Close() error {
 	return nil
 }
 
-func (v *RemoteVolume) Open(path string) (volume.FileReadCloser, error) {
+func (v *WebsocketVolume) Open(path string) (volume.FileReadCloser, error) {
 	return &fileReadWriter{&fileHandle{v, path}, 0}, nil
 }
 
-func (v *RemoteVolume) Create(path string) (volume.FileWriteCloser, error) {
+func (v *WebsocketVolume) Create(path string) (volume.FileWriteCloser, error) {
 	return &fileReadWriter{&fileHandle{v, path}, 0}, nil
 }
 
-func (v *RemoteVolume) OpenFile(path string, flag int, perm os.FileMode) (volume.File, error) {
+func (v *WebsocketVolume) OpenFile(path string, flag int, perm os.FileMode) (volume.File, error) {
 	return &fileReadWriter{&fileHandle{v, path}, 0}, nil
 }
 
-func (v *RemoteVolume) Remove(path string) error {
+func (v *WebsocketVolume) Remove(path string) error {
 	var res map[string]interface{}
 	v.statCache.delete(path)
 	return v.request(map[string]interface{}{"op": "remove", "path": path}, &res)
 }
 
-func (v *RemoteVolume) ReadDir(path string) ([]*volume.FileInfo, error) {
+func (v *WebsocketVolume) ReadDir(path string) ([]*volume.FileInfo, error) {
 	var res struct {
 		Files []*volume.FileInfo `json:"files"`
 	}
@@ -250,7 +271,7 @@ func (v *RemoteVolume) ReadDir(path string) ([]*volume.FileInfo, error) {
 	return res.Files, nil
 }
 
-func (v *RemoteVolume) Mkdir(path string, mode os.FileMode) error {
+func (v *WebsocketVolume) Mkdir(path string, mode os.FileMode) error {
 	var res map[string]interface{}
 	return v.request(map[string]interface{}{"op": "mkdir", "path": path}, &res)
 }

@@ -4,11 +4,56 @@ import (
 	"encoding/json"
 	"io"
 	"log"
-
-	"github.com/gorilla/websocket"
+	"time"
 
 	"github.com/binzume/cfs/volume"
+	"github.com/gorilla/websocket"
 )
+
+type WebsocketVolumeProvider struct {
+	volume            volume.FS
+	connected         bool
+	reconnectInterval time.Duration
+}
+
+func NewWebsocketVolumeProvider(volume volume.FS) *WebsocketVolumeProvider {
+	return &WebsocketVolumeProvider{
+		volume:            volume,
+		reconnectInterval: time.Second * 3,
+	}
+}
+
+func (wp *WebsocketVolumeProvider) StartClient(connector websocketConnector) {
+	go func() {
+		for {
+			conn, err := connector()
+			if err != nil {
+				log.Printf(" error: %v", err)
+				return
+			}
+			wp.HandleSession(conn, "file")
+			time.Sleep(wp.reconnectInterval)
+		}
+	}()
+}
+
+func (wp *WebsocketVolumeProvider) StartClientWithDefaultConnector(wsurl string) {
+	var connector = func() (*websocket.Conn, error) {
+		c, _, err := websocket.DefaultDialer.Dial(wsurl, nil)
+		return c, err
+	}
+	wp.StartClient(connector)
+}
+
+func (wp *WebsocketVolumeProvider) Terminate() {
+}
+
+func (wp *WebsocketVolumeProvider) HandleSession(conn *websocket.Conn, target string) {
+	conn.WriteJSON(&map[string]interface{}{})
+	wp.connected = true
+	defer func() { wp.connected = false }()
+	ConnectClient(wp.volume, conn, target) // TODO: refactoring
+}
 
 func errorResponse(rid interface{}, msg string) *map[string]interface{} {
 	return &map[string]interface{}{"error": msg, "rid": rid}
