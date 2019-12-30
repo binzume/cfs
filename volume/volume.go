@@ -107,7 +107,7 @@ const (
 
 type FileEvent struct {
 	Type EventType
-	File *FileInfo
+	Path string
 }
 
 type FS interface {

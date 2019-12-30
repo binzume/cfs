@@ -3,7 +3,9 @@ package volume
 import (
 	"io/ioutil"
 	"os"
+	"sync"
 	"testing"
+	"time"
 )
 
 func TestLocalVolume(t *testing.T) {
@@ -13,9 +15,9 @@ func TestLocalVolume(t *testing.T) {
 	var _ VolumeWalker = vol
 
 	testVolume(t, vol,
-		[]string{"/test.txt", "/test.zip", "test.txt"},
+		[]string{"/test.txt", "/test.zip", "test.txt", "test/empty.txt"},
 		[]string{"/not_existing_file", "/not_existing_dir/hello.txt"},
-		[]string{"/", "./"},
+		[]string{"/", "", "test"},
 		[]string{"/not_existing_dir"},
 	)
 	testVolumeWriter(t, vol,
@@ -82,9 +84,22 @@ func TestLocalVolume_Open(t *testing.T) {
 func TestLocalVolume_Watch(t *testing.T) {
 	var vol = NewLocalVolume("./testdata")
 
-	c, err := vol.Watch(func(FileEvent) {})
+	done := make(chan struct{})
+	closeOnce := sync.Once{}
+	c, err := vol.Watch(func(ev FileEvent) {
+		t.Log(ev)
+		closeOnce.Do(func() { close(done) })
+	})
 	if err != nil {
 		t.Errorf("error: %v", err)
 	}
 	defer c.Close()
+	vol.Mkdir("/test/dir", 777)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Log("watch timeout")
+	}
+
+	vol.Remove("/test/dir")
 }

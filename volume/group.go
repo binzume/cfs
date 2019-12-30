@@ -167,7 +167,7 @@ func (vg *VolumeGroup) Watch(callback func(f FileEvent)) (io.Closer, error) {
 		if e.v.Available() {
 			path := e.p
 			c, _ := watch(e.v, func(f FileEvent) {
-				f.File.Path = path + "/" + f.File.Path
+				f.Path = path + "/" + f.Path
 				callback(f)
 			})
 			if c != nil {

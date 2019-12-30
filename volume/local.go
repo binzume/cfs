@@ -105,39 +105,37 @@ func (v *LocalVolume) Watch(callback func(FileEvent)) (io.Closer, error) {
 		return nil, err
 	}
 	go func() {
-		done := make(chan bool)
+		done := make(chan struct{})
 		go func() {
 			defer watcher.Close()
+			defer close(done)
 			for {
 				select {
 				case event := <-watcher.Events:
 					log.Println("event:", event)
 					path, _ := filepath.Rel(v.basePath, event.Name)
+					path = filepath.ToSlash(path)
 					if (event.Op & fsnotify.Write) != 0 {
-						info, err := os.Stat(event.Name)
-						if err == nil {
-							callback(FileEvent{UpdateEvent, newLocalFileEntry(path, info)})
-						}
-					}
-					if (event.Op & fsnotify.Create) != 0 {
+						callback(FileEvent{UpdateEvent, path})
+					} else if (event.Op & fsnotify.Create) != 0 {
 						info, err := os.Stat(event.Name)
 						if err == nil {
 							if info.IsDir() {
 								watcher.Add(event.Name)
 								v.walk(func(f *FileInfo) {
-									callback(FileEvent{CreateEvent, f})
+									callback(FileEvent{CreateEvent, f.Path})
 								}, path)
-							} else {
-								callback(FileEvent{CreateEvent, newLocalFileEntry(path, info)})
 							}
+							callback(FileEvent{CreateEvent, path})
 						}
-					}
-					if (event.Op & (fsnotify.Remove | fsnotify.Rename)) != 0 {
-						callback(FileEvent{RemoveEvent, &FileInfo{Path: path}})
+					} else if (event.Op & (fsnotify.Remove | fsnotify.Rename)) != 0 {
+						callback(FileEvent{RemoveEvent, path})
 					}
 				case err := <-watcher.Errors:
-					log.Println("error:", err)
-					done <- false
+					if err != nil {
+						log.Println("watch error:", err)
+					}
+					return
 				}
 			}
 		}()
@@ -150,11 +148,8 @@ func (v *LocalVolume) Watch(callback func(FileEvent)) (io.Closer, error) {
 				err = watcher.Add(path)
 				if err != nil {
 					log.Println("error:", err, path)
-					// done <- false
 				}
-				return nil
 			}
-			// fch <- NewLocalFile(path, info, v)
 			return nil
 		}
 
