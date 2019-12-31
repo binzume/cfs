@@ -1,10 +1,12 @@
 package wsvolume
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"sync"
 	"time"
@@ -14,12 +16,22 @@ import (
 	"github.com/binzume/cfs/volume"
 )
 
+type rmsg struct {
+	messageType int
+	message     []byte
+}
+
+type Req struct {
+	data       map[string]interface{}
+	responseCh chan<- rmsg
+}
+
 // WebsocketVolume ...
 type WebsocketVolume struct {
 	Name      string
 	lock      sync.Mutex
-	conn      *websocket.Conn // TODO: multiple conns
-	wch       chan map[string]interface{}
+	conn      io.Closer // TODO: multiple conns
+	wch       chan Req
 	statCache statCache
 	connected bool
 }
@@ -39,9 +51,15 @@ type websocketConnector func() (*websocket.Conn, error)
 func NewWebsocketVolume(name string) *WebsocketVolume {
 	return &WebsocketVolume{
 		Name:      name,
-		wch:       make(chan map[string]interface{}),
+		wch:       make(chan Req),
 		statCache: statCache{c: map[string]*statCacheE{}},
 	}
+}
+
+// WSUpgrader for upgrading http request in handle request
+var WSUpgrader = websocket.Upgrader{
+	ReadBufferSize:  1024,
+	WriteBufferSize: 1024,
 }
 
 var statCacheExpireTime = time.Second * 5
@@ -69,7 +87,7 @@ func (c *statCache) delete(path string) {
 }
 
 // Start volume backend.
-func (v *WebsocketVolume) StartClient(connector websocketConnector) (<-chan error, error) {
+func (v *WebsocketVolume) StartClient(connector websocketConnector) (<-chan struct{}, error) {
 	conn, err := connector()
 	if err != nil {
 		log.Println("failed to connect: ", err)
@@ -90,35 +108,68 @@ func (v *WebsocketVolume) StartClientWithDefaultConnector(wsurl string) error {
 	return err
 }
 
-func (v *WebsocketVolume) BindConnection(conn *websocket.Conn) (<-chan error, error) {
-	if v.connected {
-		return nil, fmt.Errorf("Already connected")
+func (v *WebsocketVolume) HandleRequest(w http.ResponseWriter, r *http.Request, header http.Header) (<-chan struct{}, error) {
+	conn, err := WSUpgrader.Upgrade(w, r, header)
+	if err != nil {
+		return nil, err
 	}
+	return v.BindConnection(conn)
+}
+
+func (v *WebsocketVolume) BindConnection(conn *websocket.Conn) (<-chan struct{}, error) {
 	v.lock.Lock()
 	defer v.lock.Unlock()
 
-	errorch := make(chan error, 1)
+	if v.connected {
+		return nil, fmt.Errorf("Already connected")
+	}
+
+	done := make(chan struct{})
 	v.conn = conn
 	var data = map[string]string{}
-	v.conn.ReadJSON(data) // wait to establish.
+	conn.ReadJSON(data) // wait to establish.
+
+	reqsCh := make(chan Req, 1)
 
 	v.connected = true
 	go func() {
 		defer v.Terminate()
+		defer close(reqsCh)
 		count := 0
 		for {
-			req := <-v.wch
-			req["rid"] = count
-			err := v.conn.WriteJSON(req)
-			if err != nil {
-				errorch <- err
+			select {
+			case req := <-v.wch:
+				req.data["rid"] = count
+				err := conn.WriteJSON(req.data)
+				if err != nil {
+					close(req.responseCh)
+					break
+				}
+				reqsCh <- req
+				count++
+			case <-done:
 				break
 			}
-			count++
 		}
 	}()
 
-	return errorch, nil
+	go func() {
+		defer v.Terminate()
+		defer close(done)
+		for {
+			mt, msg, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+			req := <-reqsCh
+			req.responseCh <- rmsg{mt, msg}
+		}
+		for req := range reqsCh {
+			close(req.responseCh)
+		}
+	}()
+
+	return done, nil
 }
 
 // Stop volume backend.
@@ -138,14 +189,16 @@ func (v *WebsocketVolume) request(r map[string]interface{}, result interface{}) 
 	if !v.connected {
 		return fmt.Errorf("connection closed")
 	}
-	v.wch <- r
-	v.lock.Lock()
-	defer v.lock.Unlock()
-	return v.conn.ReadJSON(&result)
-}
-
-func (v *WebsocketVolume) Locker() sync.Locker {
-	return &v.lock
+	rch := make(chan rmsg)
+	v.wch <- Req{
+		data:       r,
+		responseCh: rch,
+	}
+	res := <-rch
+	if res.message == nil {
+		return fmt.Errorf("connection closed")
+	}
+	return json.Unmarshal(res.message, &result)
 }
 
 func (v *WebsocketVolume) Available() bool {
@@ -179,21 +232,24 @@ type fileHandle struct {
 
 func (f *fileHandle) ReadAt(b []byte, offset int64) (int, error) {
 	v := f.volume
-	v.wch <- map[string]interface{}{"op": "read", "path": f.path, "p": offset, "l": len(b)}
-
-	v.lock.Lock()
-	defer v.lock.Unlock()
-	mt, msg, err := v.conn.ReadMessage()
-	if err != nil {
-		return 0, err
+	rch := make(chan rmsg)
+	v.wch <- Req{
+		data:       map[string]interface{}{"op": "read", "path": f.path, "p": offset, "l": len(b)},
+		responseCh: rch,
 	}
-	if mt != websocket.BinaryMessage {
+
+	msg := <-rch
+	// mt, msg, err := v.conn.ReadMessage()
+	if msg.message == nil {
+		return 0, fmt.Errorf("closed")
+	}
+	if msg.messageType != websocket.BinaryMessage {
 		return 0, fmt.Errorf("invalid msgType")
 	}
-	if len(msg) == 0 {
+	if len(msg.message) == 0 {
 		return 0, io.EOF
 	}
-	return copy(b, msg), nil
+	return copy(b, msg.message), nil
 }
 
 func (f *fileHandle) WriteAt(b []byte, offset int64) (int, error) {

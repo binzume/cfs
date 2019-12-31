@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/binzume/cfs/volume"
-	"github.com/gorilla/websocket"
 )
 
 func TestWsVolume(t *testing.T) {
@@ -26,13 +25,8 @@ func TestWsVolume_Connect1(t *testing.T) {
 
 	connected := make(chan struct{})
 	once := sync.Once{}
-	wsupgrader := websocket.Upgrader{}
 	testHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := wsupgrader.Upgrade(w, r, nil)
-		if err != nil {
-			return
-		}
-		go provider.HandleSession(conn, "file")
+		provider.HandleRequest(w, r, nil)
 		once.Do(func() { close(connected) })
 	})
 	testServer := httptest.NewServer(testHandler)
@@ -82,13 +76,8 @@ func TestWsVolume_Connect2(t *testing.T) {
 
 	connected := make(chan struct{})
 	once := sync.Once{}
-	wsupgrader := websocket.Upgrader{}
 	testHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := wsupgrader.Upgrade(w, r, nil)
-		if err != nil {
-			return
-		}
-		vol.BindConnection(conn)
+		vol.HandleRequest(w, r, nil)
 		once.Do(func() { close(connected) })
 	})
 	testServer := httptest.NewServer(testHandler)

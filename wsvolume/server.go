@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"log"
+	"net/http"
 	"time"
 
 	"github.com/binzume/cfs/volume"
@@ -23,8 +24,10 @@ func NewWebsocketVolumeProvider(volume volume.FS) *WebsocketVolumeProvider {
 	}
 }
 
-func (wp *WebsocketVolumeProvider) StartClient(connector websocketConnector) {
+func (wp *WebsocketVolumeProvider) StartClient(connector websocketConnector) <-chan struct{} {
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		for {
 			conn, err := connector()
 			if err != nil {
@@ -35,24 +38,35 @@ func (wp *WebsocketVolumeProvider) StartClient(connector websocketConnector) {
 			time.Sleep(wp.reconnectInterval)
 		}
 	}()
+	return done
 }
 
-func (wp *WebsocketVolumeProvider) StartClientWithDefaultConnector(wsurl string) {
+func (wp *WebsocketVolumeProvider) StartClientWithDefaultConnector(wsurl string) <-chan struct{} {
 	var connector = func() (*websocket.Conn, error) {
 		c, _, err := websocket.DefaultDialer.Dial(wsurl, nil)
 		return c, err
 	}
-	wp.StartClient(connector)
+	return wp.StartClient(connector)
 }
 
 func (wp *WebsocketVolumeProvider) Terminate() {
 }
 
-func (wp *WebsocketVolumeProvider) HandleSession(conn *websocket.Conn, target string) {
+func (v *WebsocketVolumeProvider) HandleRequest(w http.ResponseWriter, r *http.Request, header http.Header) error {
+	conn, err := WSUpgrader.Upgrade(w, r, header)
+	if err != nil {
+		return err
+	}
+	go v.HandleSession(conn, "file")
+	return nil
+}
+
+func (wp *WebsocketVolumeProvider) HandleSession(conn *websocket.Conn, target string) error {
 	conn.WriteJSON(&map[string]interface{}{})
 	wp.connected = true
 	defer func() { wp.connected = false }()
 	ConnectClient(wp.volume, conn, target) // TODO: refactoring
+	return nil
 }
 
 func errorResponse(rid interface{}, msg string) *map[string]interface{} {
