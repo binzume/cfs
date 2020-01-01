@@ -1,57 +1,81 @@
 package httpvolume
 
 import (
+	"io"
 	"io/ioutil"
 	"log"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"testing"
 )
-
-const testURL = "https://www.binzume.net/"
 
 func init() {
 	RequestLogger = log.New(os.Stderr, "", log.LstdFlags)
 }
 
 func TestHttpVolume(t *testing.T) {
-	var vol = NewHTTPVolume(testURL, false)
+	var vol = NewHTTPVolume("", false)
 	if !vol.Available() {
 		t.Errorf("not available")
 	}
 }
 
 func TestHttpVolume_Stat(t *testing.T) {
-	var vol = NewHTTPVolume(testURL, false)
+	testHandler := http.NewServeMux()
+	testHandler.Handle("/index.txt", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, "0123456789abcdef")
+	}))
+	testServer := httptest.NewServer(testHandler)
+	defer testServer.Close()
 
-	stat, err := vol.Stat("index.txt")
+	var vol = NewHTTPVolume("", false)
+
+	stat, err := vol.Stat(testServer.URL + "/index.txt")
 	if err != nil {
 		t.Errorf("error: %v", err)
 	}
-	if stat.Size() == 0 {
-		t.Errorf("empty content")
+	if stat.Size() != 16 {
+		t.Errorf("invalid size %v", stat.Size())
 	}
 	t.Logf("file: %v size: %v modified: %v", stat.Name(), stat.Size(), stat.ModTime())
 
-	_, err = vol.Stat("notfound.txt")
-	if err == nil {
-		t.Errorf("unexpected error: %v", err)
+	_, err = vol.Stat(testServer.URL + "/notfound.txt")
+	if _, ok := err.(*os.PathError); !ok {
+		t.Errorf("should return pathError. err: %v", err)
 	}
 
-	var vol2 = NewHTTPVolume("", false)
+	_, err = vol.Stat("invalid\nurl")
+	if _, ok := err.(*os.PathError); !ok {
+		t.Errorf("should return pathError. err: %v", err)
+	}
+	_, err = vol.Stat("nothttp://hello")
+	if _, ok := err.(*os.PathError); !ok {
+		t.Errorf("should return pathError. err: %v", err)
+	}
 
-	stat, err = vol2.Stat(testURL + "index.txt")
+	var vol2 = NewHTTPVolume(testServer.URL, false)
+	stat, err = vol2.Stat("index.txt")
 	if err != nil {
 		t.Errorf("error: %v", err)
 	}
-	if stat.Size() == 0 {
-		t.Errorf("empty content")
+	if stat.Size() != 16 {
+		t.Errorf("invalid size %v", stat.Size())
 	}
+
 }
 
 func TestHttpVolume_Open(t *testing.T) {
-	var vol = NewHTTPVolume(testURL, false)
+	testHandler := http.NewServeMux()
+	testHandler.Handle("/index.txt", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, "0123456789abcdef")
+	}))
+	testServer := httptest.NewServer(testHandler)
+	defer testServer.Close()
 
-	r, err := vol.Open("index.txt")
+	var vol = NewHTTPVolume("", false)
+
+	r, err := vol.Open(testServer.URL + "/index.txt")
 	if err != nil {
 		t.Errorf("error: %v", err)
 	}
@@ -64,51 +88,103 @@ func TestHttpVolume_Open(t *testing.T) {
 		t.Errorf("empty content: %v", string(b))
 	}
 
-	r, err = vol.Open("notfound.txt")
-	if err == nil {
-		t.Errorf("unexpected error: %v", err)
-		r.Close()
+	_, err = vol.Open(testServer.URL + "/notfound.txt")
+	if _, ok := err.(*os.PathError); !ok {
+		t.Errorf("should return pathError. err: %v", err)
+	}
+	_, err = vol.Open("invalid\nurl")
+	if _, ok := err.(*os.PathError); !ok {
+		t.Errorf("should return pathError. err: %v", err)
+	}
+	_, err = vol.Open("nothttp://hello")
+	if _, ok := err.(*os.PathError); !ok {
+		t.Errorf("should return pathError. err: %v", err)
 	}
 
 	// lazy
-	var vol2 = NewHTTPVolume(testURL, true)
-	r, err = vol2.Open("notfound.txt")
+	var vol3 = NewHTTPVolume("", true)
+	r, err = vol3.Open("notfound.txt")
 	if err != nil {
 		t.Errorf("error: %v", err)
 	}
 	defer r.Close()
 	_, err = ioutil.ReadAll(r)
-	if err == nil {
-		t.Errorf("should return error")
+	if _, ok := err.(*os.PathError); !ok {
+		t.Errorf("should return pathError. err: %v", err)
 	}
 }
 
 func TestHttpVolume_ReadDir(t *testing.T) {
-	var vol = NewHTTPVolume(testURL, false)
+	testHandler := http.NewServeMux()
+	testHandler.Handle("/index.txt", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, "0123456789abcdef")
+	}))
+	testServer := httptest.NewServer(testHandler)
+	defer testServer.Close()
+
+	var vol = NewHTTPVolume(testServer.URL, false)
 
 	// TODO
 	_, _ = vol.ReadDir("")
 }
 
 func TestHttpVolume_ReadAt(t *testing.T) {
-	var vol = NewHTTPVolume(testURL, true)
+	reqCount := 0
+	testHandler := http.NewServeMux()
+	testHandler.Handle("/index.txt", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reqCount++
+		io.WriteString(w, "0123456789abcdef")
+	}))
+	testServer := httptest.NewServer(testHandler)
+	defer testServer.Close()
 
-	r, err := vol.Open("index.txt")
+	var vol = NewHTTPVolume("", true)
+
+	r, err := vol.Open(testServer.URL + "/index.txt")
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	defer r.Close()
+	if reqCount != 0 {
+		t.Errorf("reqCount: %v", reqCount)
+	}
+
+	// sequential read
+	b := make([]byte, 6)
+	offsets := []int64{0, 6, 12}
+	errs := []error{nil, nil, io.EOF}
+	contents := []string{"012345", "6789ab", "cdef"}
+	for i, ofs := range offsets {
+		n, err := r.ReadAt(b, ofs)
+		if err != errs[i] {
+			t.Errorf("error: %v", err)
+		}
+		if string(b[:n]) != contents[i] {
+			t.Errorf("unexpected content: %v", string(b))
+		}
+		if reqCount != 1 {
+			t.Errorf("should not increase reqCount: %v", reqCount)
+		}
+	}
+
+	// random access
+	_, err = r.ReadAt(b, 3)
+	if err != nil {
+		t.Errorf("error: %v", err)
+	}
+	if reqCount != 2 {
+		t.Errorf("reqCount: %v", reqCount)
+	}
+
+	// error
+	r, err = vol.Open("invalid\nurl")
 	if err != nil {
 		t.Errorf("error: %v", err)
 	}
 	defer r.Close()
-	b := make([]byte, 16)
-	n, err := r.ReadAt(b, 24)
-	if err != nil {
-		t.Errorf("error: %v", err)
-	}
-	if n != len(b) {
-		t.Errorf("length error: %v != %v", n, len(b))
+	_, err = r.ReadAt(b, 1)
+	if _, ok := err.(*os.PathError); !ok {
+		t.Errorf("should return pathError. err: %v", err)
 	}
 
-	if string(b) == "" {
-		t.Errorf("empty content: %v", string(b))
-	}
-	t.Logf("content: %v", string(b))
 }

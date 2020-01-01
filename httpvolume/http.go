@@ -28,10 +28,7 @@ type httpVolume struct {
 
 // NewHTTPVolume returns a new volume. baseURL is optional.
 func NewHTTPVolume(baseURL string, lazyOpen bool) volume.Volume {
-	jar, err := cookiejar.New(nil)
-	if err != nil {
-		panic(err)
-	}
+	jar, _ := cookiejar.New(nil)
 	client := &http.Client{Jar: jar, Transport: &requestHandler{}}
 	return &httpVolume{httpClient: client, baseURL: baseURL, lazyOpen: lazyOpen}
 }
@@ -53,11 +50,11 @@ func (v *httpVolume) Available() bool {
 func (v *httpVolume) Stat(path string) (*volume.FileInfo, error) {
 	req, err := http.NewRequest("HEAD", v.getURL(path), nil)
 	if err != nil {
-		return nil, err
+		return nil, &os.PathError{Op: "Stat", Path: path, Err: err}
 	}
 	res, err := v.httpClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, &os.PathError{Op: "Stat", Path: path, Err: err}
 	}
 	defer res.Body.Close()
 
@@ -87,11 +84,11 @@ type httpReader struct {
 func (hr *httpReader) open() error {
 	req, err := http.NewRequest("GET", hr.url, nil)
 	if err != nil {
-		return err
+		return &os.PathError{Op: "Open", Path: hr.url, Err: err}
 	}
 	res, err := hr.v.httpClient.Do(req)
 	if err != nil {
-		return err
+		return &os.PathError{Op: "Open", Path: hr.url, Err: err}
 	}
 	if res.StatusCode >= 400 {
 		res.Body.Close()
@@ -109,9 +106,6 @@ func (hr *httpReader) Read(p []byte) (n int, err error) {
 		}
 	}
 	n, err = hr.body.Read(p)
-	if n == len(p) && err == io.EOF {
-		err = nil // Body.Read returns EOF error when completed.
-	}
 	hr.bodyPos += int64(n)
 	return
 }
@@ -129,17 +123,17 @@ func (hr *httpReader) ReadAt(p []byte, off int64) (n int, err error) {
 	}
 	req, err := http.NewRequest("GET", hr.url, nil)
 	if err != nil {
-		return 0, err
+		return 0, &os.PathError{Op: "ReadAt", Path: hr.url, Err: err}
 	}
 	req.Header.Add("Range", fmt.Sprintf("bytes=%v-%v", off, off+int64(len(p))-1))
 	res, err := hr.v.httpClient.Do(req)
 	if err != nil {
-		return 0, err
+		return 0, &os.PathError{Op: "ReadAt", Path: hr.url, Err: err}
 	}
 	defer res.Body.Close()
 	n, err = res.Body.Read(p)
-	if n == len(p) && err == io.EOF {
-		err = nil // Body.Read returns EOF error when completed.
+	if res.StatusCode >= 400 {
+		err = &os.PathError{Op: "ReadAt", Path: hr.url}
 	}
 	return
 }
