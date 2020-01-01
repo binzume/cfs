@@ -2,8 +2,10 @@ package fuse
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -23,7 +25,6 @@ func (fs *fuseFs) WithContext(ctx context.Context) (context.Context, context.Can
 }
 
 func (fs *fuseFs) CreateFile(ctx context.Context, fi *dokan.FileInfo, cd *dokan.CreateData) (dokan.File, bool, error) {
-	log.Println("CreateFile", fi.Path())
 	path := strings.TrimLeft(strings.Replace(fi.Path()[1:], "\\", "/", -1), "/")
 	st, err := fs.v.Stat(path)
 	if err != nil {
@@ -66,26 +67,22 @@ func debug(s string) {
 type baseFile struct{}
 
 func (f *baseFile) ReadFile(ctx context.Context, fi *dokan.FileInfo, bs []byte, offset int64) (int, error) {
-	debug("ReadFile")
-	return len(bs), nil
+	return 0, fmt.Errorf("unsupported operation")
 }
 func (f *baseFile) WriteFile(ctx context.Context, fi *dokan.FileInfo, bs []byte, offset int64) (int, error) {
-	return len(bs), nil
+	return 0, fmt.Errorf("unsupported operation")
 }
 func (f *baseFile) FlushFileBuffers(ctx context.Context, fi *dokan.FileInfo) error {
-	debug("FlushFileBuffers")
 	return nil
 }
 
 func (f *baseFile) GetFileInformation(ctx context.Context, fi *dokan.FileInfo) (*dokan.Stat, error) {
-	debug("GetFileInformation")
 	var st dokan.Stat
 	st.FileAttributes = dokan.FileAttributeNormal
 	return &st, nil
 }
 func (f *baseFile) FindFiles(context.Context, *dokan.FileInfo, string, func(*dokan.NamedStat) error) error {
-	debug("FindFiles")
-	return nil
+	return fmt.Errorf("unsupported operation")
 }
 func (f *baseFile) SetFileTime(context.Context, *dokan.FileInfo, time.Time, time.Time, time.Time) error {
 	debug("SetFileTime")
@@ -97,11 +94,9 @@ func (f *baseFile) SetFileAttributes(ctx context.Context, fi *dokan.FileInfo, fi
 }
 
 func (f *baseFile) LockFile(ctx context.Context, fi *dokan.FileInfo, offset int64, length int64) error {
-	debug("LockFile")
 	return nil
 }
 func (f *baseFile) UnlockFile(ctx context.Context, fi *dokan.FileInfo, offset int64, length int64) error {
-	debug("UnlockFile")
 	return nil
 }
 
@@ -127,7 +122,6 @@ func (f *baseFile) Cleanup(ctx context.Context, fi *dokan.FileInfo) {
 }
 
 func (f *baseFile) CloseFile(ctx context.Context, fi *dokan.FileInfo) {
-	debug("CloseFile")
 }
 
 func (f *baseFile) GetFileSecurity(ctx context.Context, fi *dokan.FileInfo, si winacl.SecurityInformation, sd *winacl.SecurityDescriptor) error {
@@ -164,14 +158,13 @@ type ChoiceFile struct {
 }
 
 func (t *fuseDir) FindFiles(ctx context.Context, fi *dokan.FileInfo, p string, cb func(*dokan.NamedStat) error) error {
-	log.Println("FindFiles", fi.Path())
 	files, err := t.v.ReadDir(t.path)
 	for _, f := range files {
 		st := dokan.NamedStat{}
 		st.Name = f.Name()
-		st.FileSize = f.FileSize
-		st.LastWrite = f.UpdatedTime
-		st.LastAccess = f.UpdatedTime
+		st.FileSize = f.Size()
+		st.LastWrite = f.ModTime()
+		st.LastAccess = f.ModTime()
 		st.Creation = f.CreatedTime
 		if f.IsDir() {
 			st.FileAttributes = dokan.FileAttributeDirectory
@@ -184,7 +177,6 @@ func (t *fuseDir) FindFiles(ctx context.Context, fi *dokan.FileInfo, p string, c
 }
 
 func (t *fuseDir) GetFileInformation(ctx context.Context, fi *dokan.FileInfo) (*dokan.Stat, error) {
-	debug("GetFileInformation " + t.path)
 	if t.st == nil {
 		f, err := t.v.Stat(t.path)
 		if err != nil {
@@ -229,25 +221,17 @@ func (t *fuseDir) Cleanup(ctx context.Context, fi *dokan.FileInfo) {
 
 func MountVolume(v volume.Volume, mountPoint string) <-chan error {
 	_, err := os.Stat(mountPoint)
-	if len(mountPoint) > 2 && (err != nil && os.IsNotExist(err)) {
+	if len(mountPoint) > 2 && os.IsNotExist(err) {
 		// q:hoge/fuga -> q: + hoge/fuga
 		vg := volume.NewVolumeGroup()
-		vg.AddVolume(mountPoint[2:], v)
+		vg.AddVolume(filepath.ToSlash(mountPoint[2:]), v)
 		v = vg
 		mountPoint = mountPoint[:2]
 	}
 
 	errorch := make(chan error)
 	go func() {
-		var fs volume.FS
-		if fs2, ok := v.(volume.FS); ok {
-			fs = fs2
-		} else {
-			vg := volume.NewVolumeGroup()
-			vg.AddVolume("", v)
-			fs = vg
-		}
-		myFileSystem := &fuseFs{v: fs}
+		myFileSystem := &fuseFs{v: volume.ToFS(v)}
 		mp, err := dokan.Mount(&dokan.Config{FileSystem: myFileSystem, Path: mountPoint})
 		if err != nil {
 			errorch <- err
