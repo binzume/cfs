@@ -99,8 +99,8 @@ func mount(volumePath, mountPoint string) error {
 
 	log.Println("started.", err)
 	select {
-	case err = <-volumeExit:
-		log.Println("disconnected: ", err)
+	case <-volumeExit:
+		log.Println("disconnected")
 	case err = <-mountErr:
 		log.Println("unmoount: ", err)
 	}

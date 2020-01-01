@@ -5,6 +5,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/binzume/cfs/volume"
@@ -24,7 +25,7 @@ func NewWebsocketVolumeProvider(volume volume.FS) *WebsocketVolumeProvider {
 	}
 }
 
-func (wp *WebsocketVolumeProvider) StartClient(connector websocketConnector) <-chan struct{} {
+func (wp *WebsocketVolumeProvider) StartClient(connector websocketConnector) (<-chan struct{}, error) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -38,10 +39,10 @@ func (wp *WebsocketVolumeProvider) StartClient(connector websocketConnector) <-c
 			time.Sleep(wp.reconnectInterval)
 		}
 	}()
-	return done
+	return done, nil
 }
 
-func (wp *WebsocketVolumeProvider) StartClientWithDefaultConnector(wsurl string) <-chan struct{} {
+func (wp *WebsocketVolumeProvider) StartClientWithDefaultConnector(wsurl string) (<-chan struct{}, error) {
 	var connector = func() (*websocket.Conn, error) {
 		c, _, err := websocket.DefaultDialer.Dial(wsurl, nil)
 		return c, err
@@ -104,13 +105,18 @@ func fileOperation(v volume.FS, conn *websocket.Conn) {
 		if err != nil {
 			return
 		}
-		log.Println("op:", op)
+		log.Print("op:", op)
 		rid := op["rid"]
 		switch op["op"].String() {
 		case "stat":
 			st, err := v.Stat(op["path"].String())
 			if err != nil {
-				conn.WriteJSON(errorResponse(rid, "readdir error"))
+				if os.IsNotExist(err) {
+					conn.WriteJSON(errorResponse(rid, "noent"))
+				} else {
+					log.Print("stat error", err)
+					conn.WriteJSON(errorResponse(rid, "stat error"))
+				}
 				continue
 			}
 			conn.WriteJSON(&map[string]interface{}{"rid": rid, "stat": st})

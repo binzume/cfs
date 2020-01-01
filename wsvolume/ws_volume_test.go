@@ -36,7 +36,7 @@ func TestWsVolume_Connect1(t *testing.T) {
 
 	// Connect
 	t.Logf("connecting.. %v", wsurl)
-	err := vol.StartClientWithDefaultConnector(wsurl)
+	_, err := vol.StartClientWithDefaultConnector(wsurl)
 	if err != nil {
 		t.Fatalf("Start error: %v", err)
 	}

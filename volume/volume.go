@@ -133,8 +133,8 @@ func GetMetadata(f os.FileInfo, key string) interface{} {
 	return nil
 }
 
-var NoentError = errors.New("noent")
-var PermissionError = errors.New("noent")
+var NoentError = os.ErrNotExist
+var PermissionError = os.ErrPermission
 var UnsupportedError = errors.New("unsupported operation")
 
 func noentError(op, path string) error {
