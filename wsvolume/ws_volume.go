@@ -144,12 +144,12 @@ func (v *WebsocketVolume) BindConnection(conn *websocket.Conn) (<-chan struct{},
 				err := conn.WriteJSON(req.data)
 				if err != nil {
 					close(req.responseCh)
-					break
+					return
 				}
 				reqsCh <- req
 				count++
 			case <-done:
-				break
+				return
 			}
 		}
 	}()

@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"io"
+	"io/ioutil"
 	"os"
 	"strings"
 	"syscall"
@@ -60,8 +61,7 @@ func (zfr *zipFileReader) ReadAt(p []byte, off int64) (n int, err error) {
 			return 0, err
 		}
 		defer r.Close()
-		buf := make([]byte, zfr.size)
-		_, err = r.Read(buf)
+		buf, err := ioutil.ReadAll(r)
 		if err != nil {
 			return 0, err
 		}

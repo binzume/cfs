@@ -93,7 +93,7 @@ func (v *LocalVolume) walk(callback func(*FileInfo), path string) error {
 			return nil
 		}
 		vpath, _ := filepath.Rel(v.basePath, path)
-		callback(newLocalFileEntry(vpath, info))
+		callback(newLocalFileEntry(filepath.ToSlash(vpath), info))
 		return nil
 	}
 	return filepath.Walk(v.RealPath(path), f)
