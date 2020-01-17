@@ -249,13 +249,29 @@ func (v *WebsocketVolume) Stat(path string) (*volume.FileInfo, error) {
 }
 
 type fileHandle struct {
-	volume *WebsocketVolume
-	path   string
+	volume           *WebsocketVolume
+	path             string
+	lastReadPos      int64
+	seqReadCount     int
+	readBufferOffset int64
+	readBuffer       []byte
 }
 
 func (f *fileHandle) ReadAt(b []byte, offset int64) (int, error) {
+	if offset >= f.readBufferOffset && offset+int64(len(b)) <= f.readBufferOffset+int64(len(f.readBuffer)) {
+		return copy(b, f.readBuffer[offset-f.readBufferOffset:]), nil
+	}
+
+	sz := len(b)
+	if offset == f.lastReadPos {
+		f.seqReadCount++
+		// TODO: more smart mechanism.
+		if f.seqReadCount > 2 && sz < 32768 && sz > 0 {
+			sz *= (32768 / sz)
+		}
+	}
 	v := f.volume
-	msg, err := v.requestRaw(ReqData{"op": "read", "path": f.path, "p": offset, "l": len(b)})
+	msg, err := v.requestRaw(ReqData{"op": "read", "path": f.path, "p": offset, "l": sz})
 	if err != nil {
 		return 0, err
 	}
@@ -266,10 +282,15 @@ func (f *fileHandle) ReadAt(b []byte, offset int64) (int, error) {
 	if len(msg.message) == 0 {
 		return 0, io.EOF
 	}
+	f.lastReadPos = offset + int64(len(msg.message))
+	f.readBufferOffset = offset
+	f.readBuffer = msg.message
 	return copy(b, msg.message), nil
 }
 
 func (f *fileHandle) WriteAt(b []byte, offset int64) (int, error) {
+	f.seqReadCount = 0
+	f.readBuffer = nil
 	v := f.volume
 	var res struct {
 		Len int    `json:"l"`
@@ -316,16 +337,16 @@ func (*fileReadWriter) Close() error {
 }
 
 func (v *WebsocketVolume) Open(path string) (volume.FileReadCloser, error) {
-	return &fileReadWriter{&fileHandle{v, path}, 0}, nil
+	return &fileReadWriter{&fileHandle{volume: v, path: path}, 0}, nil
 }
 
 func (v *WebsocketVolume) Create(path string) (volume.FileWriteCloser, error) {
 	v.statCache.delete(path)
-	return &fileReadWriter{&fileHandle{v, path}, 0}, nil
+	return &fileReadWriter{&fileHandle{volume: v, path: path}, 0}, nil
 }
 
 func (v *WebsocketVolume) OpenFile(path string, flag int, perm os.FileMode) (volume.File, error) {
-	return &fileReadWriter{&fileHandle{v, path}, 0}, nil
+	return &fileReadWriter{&fileHandle{volume: v, path: path}, 0}, nil
 }
 
 func (v *WebsocketVolume) Remove(path string) error {
