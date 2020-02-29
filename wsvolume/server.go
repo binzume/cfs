@@ -1,6 +1,7 @@
 package wsvolume
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"io"
 	"log"
@@ -119,18 +120,20 @@ func fileOperation(v volume.FS, conn *websocket.Conn) {
 				}
 				continue
 			}
-			conn.WriteJSON(&map[string]interface{}{"rid": rid, "stat": st})
+			conn.WriteJSON(&map[string]interface{}{"rid": rid, "data": st})
 		case "read":
 			l, _ := op["l"].Int64()
 			p, _ := op["p"].Int64()
-			b := make([]byte, l)
-			len, _ := readBlock(v, op["path"].String(), b, p)
-			conn.WriteMessage(websocket.BinaryMessage, b[:len])
+			b := make([]byte, l+8)
+			len, _ := readBlock(v, op["path"].String(), b[8:], p)
+			ridint, _ := rid.Int64()
+			binary.LittleEndian.PutUint32(b[4:], uint32(ridint))
+			conn.WriteMessage(websocket.BinaryMessage, b[:(8+len)])
 		case "write":
 			p, _ := op["p"].Int64()
 			b := []byte(op["b"].String())
 			len, _ := writeBlock(v, op["path"].String(), b, p)
-			conn.WriteJSON(&map[string]interface{}{"rid": rid, "l": len})
+			conn.WriteJSON(&map[string]interface{}{"rid": rid, "data": len})
 		case "remove":
 			_ = v.Remove(op["path"].String())
 			conn.WriteJSON(&map[string]interface{}{"rid": rid})
@@ -140,7 +143,7 @@ func fileOperation(v volume.FS, conn *websocket.Conn) {
 				conn.WriteJSON(errorResponse(rid, "readdir error"))
 				continue
 			}
-			conn.WriteJSON(&map[string]interface{}{"rid": rid, "files": files})
+			conn.WriteJSON(&map[string]interface{}{"rid": rid, "data": files})
 		default:
 			conn.WriteJSON(errorResponse(rid, "unknown operation"))
 		}

@@ -1,6 +1,7 @@
 package wsvolume
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,14 +19,27 @@ import (
 )
 
 type rmsg struct {
-	messageType int
-	message     []byte
+	data   []byte
+	binary bool
+	err    error
 }
 
 type ReqData map[string]interface{}
-type Req struct {
-	data       ReqData
-	responseCh chan<- rmsg
+type Cmd struct {
+	req   ReqData
+	resCh chan<- *rmsg
+}
+
+type ResponseJson struct {
+	RID   uint32          `json:"rid"`
+	Error *string         `json:"error"`
+	Data  json.RawMessage `json:"data"`
+}
+
+type RemoteError string
+
+func (e *RemoteError) Error() string {
+	return string(*e)
 }
 
 // WebsocketVolume ...
@@ -33,7 +47,7 @@ type WebsocketVolume struct {
 	Name      string
 	lock      sync.Mutex
 	conn      io.Closer // TODO: multiple conns
-	wch       chan Req
+	wch       chan Cmd
 	statCache statCache
 	connected bool
 }
@@ -53,7 +67,7 @@ type websocketConnector func() (*websocket.Conn, error)
 func NewWebsocketVolume(name string) *WebsocketVolume {
 	return &WebsocketVolume{
 		Name:      name,
-		wch:       make(chan Req),
+		wch:       make(chan Cmd),
 		statCache: statCache{c: map[string]*statCacheE{}},
 	}
 }
@@ -117,6 +131,32 @@ func (v *WebsocketVolume) HandleRequest(w http.ResponseWriter, r *http.Request, 
 	return v.BindConnection(conn)
 }
 
+func (v *WebsocketVolume) readResponse(conn *websocket.Conn) (*rmsg, uint32, error) {
+	mt, msg, err := conn.ReadMessage()
+	if err != nil {
+		return nil, 0, err
+	}
+	switch mt {
+	case websocket.TextMessage:
+		var res ResponseJson
+		if err := json.Unmarshal(msg, &res); err != nil {
+			return nil, 0, err
+		}
+		if res.Error != nil {
+			err = (*RemoteError)(res.Error)
+		}
+		return &rmsg{res.Data, false, err}, res.RID, nil
+	case websocket.BinaryMessage:
+		if len(msg) < 8 {
+			return nil, 0, fmt.Errorf("invalid binary response")
+		}
+		rid := binary.LittleEndian.Uint32(msg[4:])
+		return &rmsg{msg[8:], true, nil}, rid, nil
+	default:
+		return nil, 0, fmt.Errorf("invalid message type")
+	}
+}
+
 func (v *WebsocketVolume) BindConnection(conn *websocket.Conn) (<-chan struct{}, error) {
 	v.lock.Lock()
 	defer v.lock.Unlock()
@@ -131,23 +171,33 @@ func (v *WebsocketVolume) BindConnection(conn *websocket.Conn) (<-chan struct{},
 	var data = map[string]string{}
 	conn.ReadJSON(data) // wait to establish.
 
-	reqsCh := make(chan Req, 1)
+	cmds := map[uint32]Cmd{}
+	var cmdsLock sync.Mutex
 
 	go func() {
 		defer v.Terminate()
-		defer close(reqsCh)
-		count := 0
+		var ridSeq uint32
+		defer func() {
+			// cancel commands
+			cmdsLock.Lock()
+			for _, cmd := range cmds {
+				close(cmd.resCh)
+			}
+			cmdsLock.Unlock()
+		}()
 		for {
 			select {
-			case req := <-v.wch:
-				req.data["rid"] = count
-				err := conn.WriteJSON(req.data)
+			case cmd := <-v.wch:
+				ridSeq++
+				cmd.req["rid"] = ridSeq
+				err := conn.WriteJSON(cmd.req)
 				if err != nil {
-					close(req.responseCh)
+					close(cmd.resCh)
 					return
 				}
-				reqsCh <- req
-				count++
+				cmdsLock.Lock()
+				cmds[ridSeq] = cmd
+				cmdsLock.Unlock()
 			case <-done:
 				return
 			}
@@ -158,16 +208,16 @@ func (v *WebsocketVolume) BindConnection(conn *websocket.Conn) (<-chan struct{},
 		defer v.Terminate()
 		defer close(done)
 		for {
-			mt, msg, err := conn.ReadMessage()
+			r, rid, err := v.readResponse(conn)
 			if err != nil {
 				return
 			}
-			req := <-reqsCh
-			// TODO: check rid.
-			req.responseCh <- rmsg{mt, msg}
-		}
-		for req := range reqsCh {
-			close(req.responseCh)
+			cmdsLock.Lock()
+			if cmd, ok := cmds[rid]; ok {
+				delete(cmds, rid)
+				cmd.resCh <- r
+			}
+			cmdsLock.Unlock()
 		}
 	}()
 
@@ -187,32 +237,35 @@ func (v *WebsocketVolume) Terminate() {
 	log.Println("terminate volume.", v.Name)
 }
 
-func (v *WebsocketVolume) requestRaw(r ReqData) (rmsg, error) {
+func (v *WebsocketVolume) requestRaw(r ReqData) (*rmsg, error) {
 	if !v.connected {
-		return rmsg{}, fmt.Errorf("connection closed")
+		return nil, fmt.Errorf("connection closed")
 	}
-	// TODO: timeout
-	rch := make(chan rmsg)
-	v.wch <- Req{
-		data:       r,
-		responseCh: rch,
+	rch := make(chan *rmsg, 1)
+	v.wch <- Cmd{
+		req:   r,
+		resCh: rch,
 	}
-	res := <-rch
-	if res.message == nil {
-		return res, fmt.Errorf("connection closed")
+	select {
+	case res := <-rch:
+		if res == nil {
+			return nil, fmt.Errorf("connection closed")
+		}
+		return res, res.err
+	case <-time.After(15 * time.Second):
 	}
-	return res, nil
+	return nil, fmt.Errorf("timeout")
 }
 
 func (v *WebsocketVolume) request(r ReqData, result interface{}) error {
-	res, err := v.requestRaw(r)
+	rmsg, err := v.requestRaw(r)
 	if err != nil {
 		return err
 	}
-	if res.messageType != websocket.TextMessage {
-		return fmt.Errorf("invalid msgType")
+	if result != nil {
+		return json.Unmarshal(rmsg.data, result)
 	}
-	return json.Unmarshal(res.message, &result)
+	return nil
 }
 
 func (v *WebsocketVolume) Available() bool {
@@ -222,30 +275,34 @@ func (v *WebsocketVolume) Available() bool {
 func (v *WebsocketVolume) Stat(path string) (*volume.FileInfo, error) {
 	if s, ok := v.statCache.get(path); ok {
 		if s == nil {
-			return nil, volume.NoentError
+			return nil, &os.PathError{
+				Op:   "stat",
+				Path: path,
+				Err:  volume.NoentError,
+			}
 		}
 		stat := *s
 		stat.Path = path
 		return &stat, nil
 	}
-	var res struct {
-		S   *volume.FileInfo `json:"stat"`
-		Err string           `json:"error"`
-	}
-	err := v.request(ReqData{"op": "stat", "path": path}, &res)
+	var stat volume.FileInfo
+	err := v.request(ReqData{"op": "stat", "path": path}, &stat)
 	if err != nil {
+		if err.Error() == "noent" {
+			v.statCache.set(path, nil)
+			return nil, &os.PathError{
+				Op:   "stat",
+				Path: path,
+				Err:  volume.NoentError,
+			}
+		}
 		return nil, err
 	}
-	if res.Err == "noent" {
-		v.statCache.set(path, nil)
-		return nil, volume.NoentError
+	if stat.Path == "" {
+		return nil, fmt.Errorf("stat: invalid response")
 	}
-	if res.S == nil {
-		log.Printf("invalid response :%v", res.Err)
-		return nil, fmt.Errorf("invalid response %v", res.Err)
-	}
-	v.statCache.set(path, res.S)
-	return res.S, nil
+	v.statCache.set(path, &stat)
+	return &stat, nil
 }
 
 type fileHandle struct {
@@ -265,7 +322,6 @@ func (f *fileHandle) ReadAt(b []byte, offset int64) (int, error) {
 	sz := len(b)
 	if offset == f.lastReadPos {
 		f.seqReadCount++
-		// TODO: more smart mechanism.
 		if f.seqReadCount > 2 && sz < 32768 && sz > 0 {
 			sz *= (32768 / sz)
 		}
@@ -275,33 +331,29 @@ func (f *fileHandle) ReadAt(b []byte, offset int64) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-
-	if msg.messageType != websocket.BinaryMessage {
+	if !msg.binary {
 		return 0, fmt.Errorf("invalid msgType")
 	}
-	if len(msg.message) == 0 {
+	if len(msg.data) == 0 {
 		return 0, io.EOF
 	}
-	f.lastReadPos = offset + int64(len(msg.message))
+	f.lastReadPos = offset + int64(len(msg.data))
 	f.readBufferOffset = offset
-	f.readBuffer = msg.message
-	return copy(b, msg.message), nil
+	f.readBuffer = msg.data
+	return copy(b, msg.data), nil
 }
 
 func (f *fileHandle) WriteAt(b []byte, offset int64) (int, error) {
 	f.seqReadCount = 0
 	f.readBuffer = nil
 	v := f.volume
-	var res struct {
-		Len int    `json:"l"`
-		Err string `json:"error"`
-	}
-	err := v.request(ReqData{"op": "write", "path": f.path, "p": offset, "b": string(b)}, &res)
+	var len int
+	err := v.request(ReqData{"op": "write", "path": f.path, "p": offset, "b": string(b)}, &len)
 	if err != nil {
 		return 0, err
 	}
 	v.statCache.delete(f.path)
-	return res.Len, nil
+	return len, nil
 }
 
 type fileReadWriter struct {
@@ -350,30 +402,22 @@ func (v *WebsocketVolume) OpenFile(path string, flag int, perm os.FileMode) (vol
 }
 
 func (v *WebsocketVolume) Remove(path string) error {
-	var res struct {
-		Err string `json:"error"`
-	}
 	v.statCache.delete(path)
-	return v.request(map[string]interface{}{"op": "remove", "path": path}, &res)
+	return v.request(map[string]interface{}{"op": "remove", "path": path}, nil)
 }
 
 func (v *WebsocketVolume) ReadDir(fpath string) ([]*volume.FileInfo, error) {
-	var res struct {
-		Files []*volume.FileInfo `json:"files"`
-	}
-	err := v.request(map[string]interface{}{"op": "files", "path": fpath}, &res)
+	files := []*volume.FileInfo{}
+	err := v.request(map[string]interface{}{"op": "files", "path": fpath}, &files)
 	if err != nil {
 		return nil, err
 	}
-	for _, f := range res.Files {
+	for _, f := range files {
 		v.statCache.set(path.Join(fpath, f.Path), f)
 	}
-	return res.Files, nil
+	return files, nil
 }
 
 func (v *WebsocketVolume) Mkdir(path string, mode os.FileMode) error {
-	var res struct {
-		Err string `json:"error"`
-	}
-	return v.request(map[string]interface{}{"op": "mkdir", "path": path}, &res)
+	return v.request(map[string]interface{}{"op": "mkdir", "path": path}, nil)
 }

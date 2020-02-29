@@ -3,6 +3,7 @@ package wsvolume
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -134,5 +135,13 @@ func TestWsVolume_Connect2(t *testing.T) {
 	}
 	if string(b) != "Hello" {
 		t.Errorf("unexpexted string: %v", string(b))
+	}
+
+	stat, err = vol.Stat("notfound.txt")
+	if _, ok := err.(*os.PathError); !ok {
+		t.Errorf("Stat should return pathError. path: %v err: %v", "notfound.txt", err)
+	}
+	if stat != nil {
+		t.Errorf("stat != nil: %v", stat)
 	}
 }
