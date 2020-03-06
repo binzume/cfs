@@ -1,6 +1,7 @@
 package wsvolume
 
 import (
+	"bytes"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
@@ -26,8 +27,10 @@ type rmsg struct {
 
 type ReqData map[string]interface{}
 type Cmd struct {
-	req   ReqData
-	resCh chan<- *rmsg
+	req      ReqData
+	bindata  []byte
+	resCh    chan<- *rmsg
+	canceled bool
 }
 
 type ResponseJson struct {
@@ -47,9 +50,8 @@ type WebsocketVolume struct {
 	Name      string
 	lock      sync.Mutex
 	conn      io.Closer // TODO: multiple conns
-	wch       chan Cmd
+	wch       chan *Cmd
 	statCache statCache
-	connected bool
 }
 
 type statCache struct {
@@ -67,7 +69,7 @@ type websocketConnector func() (*websocket.Conn, error)
 func NewWebsocketVolume(name string) *WebsocketVolume {
 	return &WebsocketVolume{
 		Name:      name,
-		wch:       make(chan Cmd),
+		wch:       make(chan *Cmd),
 		statCache: statCache{c: map[string]*statCacheE{}},
 	}
 }
@@ -131,8 +133,41 @@ func (v *WebsocketVolume) HandleRequest(w http.ResponseWriter, r *http.Request, 
 	return v.BindConnection(conn)
 }
 
-func (v *WebsocketVolume) readResponse(conn *websocket.Conn) (*rmsg, uint32, error) {
-	mt, msg, err := conn.ReadMessage()
+type wsVolumeConn struct {
+	conn     *websocket.Conn
+	cmds     map[uint32]*Cmd
+	cmdsLock sync.Mutex
+	ridSeq   uint32
+}
+
+func (c *wsVolumeConn) sendCommand(cmd *Cmd) error {
+	c.ridSeq++
+	cmd.req["rid"] = c.ridSeq
+	if cmd.bindata == nil {
+		err := c.conn.WriteJSON(cmd.req)
+		if err != nil {
+			return err
+		}
+	} else {
+		buf := new(bytes.Buffer)
+		j, _ := json.Marshal(cmd.req)
+		binary.Write(buf, binary.LittleEndian, uint32(0))
+		binary.Write(buf, binary.LittleEndian, uint32(len(j)))
+		buf.Write(j)
+		buf.Write(cmd.bindata)
+		err := c.conn.WriteMessage(websocket.BinaryMessage, buf.Bytes())
+		if err != nil {
+			return err
+		}
+	}
+	c.cmdsLock.Lock()
+	c.cmds[c.ridSeq] = cmd
+	c.cmdsLock.Unlock()
+	return nil
+}
+
+func (c *wsVolumeConn) readResponse() (*rmsg, uint32, error) {
+	mt, msg, err := c.conn.ReadMessage()
 	if err != nil {
 		return nil, 0, err
 	}
@@ -157,47 +192,51 @@ func (v *WebsocketVolume) readResponse(conn *websocket.Conn) (*rmsg, uint32, err
 	}
 }
 
+func (c *wsVolumeConn) setResult(rid uint32, result *rmsg) {
+	c.cmdsLock.Lock()
+	defer c.cmdsLock.Unlock()
+	if cmd, ok := c.cmds[rid]; ok {
+		delete(c.cmds, rid)
+		if !cmd.canceled {
+			cmd.resCh <- result
+		}
+		close(cmd.resCh)
+	}
+}
+
+func (c *wsVolumeConn) Close() error {
+	// cancel commands
+	c.cmdsLock.Lock()
+	for _, cmd := range c.cmds {
+		close(cmd.resCh)
+	}
+	c.cmdsLock.Unlock()
+	return c.conn.Close()
+}
+
 func (v *WebsocketVolume) BindConnection(conn *websocket.Conn) (<-chan struct{}, error) {
 	v.lock.Lock()
 	defer v.lock.Unlock()
 
-	if v.connected {
+	if v.conn != nil {
 		return nil, fmt.Errorf("Already connected")
 	}
-	v.conn = conn
-	v.connected = true
 
+	c := &wsVolumeConn{conn: conn, cmds: map[uint32]*Cmd{}}
+
+	v.conn = c
 	done := make(chan struct{})
 	var data = map[string]string{}
 	conn.ReadJSON(data) // wait to establish.
 
-	cmds := map[uint32]Cmd{}
-	var cmdsLock sync.Mutex
-
 	go func() {
 		defer v.Terminate()
-		var ridSeq uint32
-		defer func() {
-			// cancel commands
-			cmdsLock.Lock()
-			for _, cmd := range cmds {
-				close(cmd.resCh)
-			}
-			cmdsLock.Unlock()
-		}()
 		for {
 			select {
 			case cmd := <-v.wch:
-				ridSeq++
-				cmd.req["rid"] = ridSeq
-				err := conn.WriteJSON(cmd.req)
-				if err != nil {
+				if err := c.sendCommand(cmd); err != nil {
 					close(cmd.resCh)
-					return
 				}
-				cmdsLock.Lock()
-				cmds[ridSeq] = cmd
-				cmdsLock.Unlock()
 			case <-done:
 				return
 			}
@@ -208,16 +247,11 @@ func (v *WebsocketVolume) BindConnection(conn *websocket.Conn) (<-chan struct{},
 		defer v.Terminate()
 		defer close(done)
 		for {
-			r, rid, err := v.readResponse(conn)
+			r, rid, err := c.readResponse()
 			if err != nil {
 				return
 			}
-			cmdsLock.Lock()
-			if cmd, ok := cmds[rid]; ok {
-				delete(cmds, rid)
-				cmd.resCh <- r
-			}
-			cmdsLock.Unlock()
+			c.setResult(rid, r)
 		}
 	}()
 
@@ -229,7 +263,6 @@ func (v *WebsocketVolume) Terminate() {
 	v.lock.Lock()
 	defer v.lock.Unlock()
 
-	v.connected = false
 	if v.conn != nil {
 		v.conn.Close()
 		v.conn = nil
@@ -237,15 +270,17 @@ func (v *WebsocketVolume) Terminate() {
 	log.Println("terminate volume.", v.Name)
 }
 
-func (v *WebsocketVolume) requestRaw(r ReqData) (*rmsg, error) {
-	if !v.connected {
+func (v *WebsocketVolume) requestRaw(r ReqData, bindata []byte) (*rmsg, error) {
+	if v.conn == nil {
 		return nil, fmt.Errorf("connection closed")
 	}
 	rch := make(chan *rmsg, 1)
-	v.wch <- Cmd{
-		req:   r,
-		resCh: rch,
+	cmd := &Cmd{
+		req:     r,
+		bindata: bindata,
+		resCh:   rch,
 	}
+	v.wch <- cmd
 	select {
 	case res := <-rch:
 		if res == nil {
@@ -253,13 +288,24 @@ func (v *WebsocketVolume) requestRaw(r ReqData) (*rmsg, error) {
 		}
 		return res, res.err
 	case <-time.After(15 * time.Second):
+		cmd.canceled = true
 	}
 	return nil, fmt.Errorf("timeout")
 }
 
 func (v *WebsocketVolume) request(r ReqData, result interface{}) error {
-	rmsg, err := v.requestRaw(r)
+	rmsg, err := v.requestRaw(r, nil)
 	if err != nil {
+		if err.Error() == "noent" {
+			path := r["path"].(string)
+			op := r["op"].(string)
+			v.statCache.set(path, nil)
+			return &os.PathError{
+				Op:   op,
+				Path: path,
+				Err:  volume.NoentError,
+			}
+		}
 		return err
 	}
 	if result != nil {
@@ -269,7 +315,7 @@ func (v *WebsocketVolume) request(r ReqData, result interface{}) error {
 }
 
 func (v *WebsocketVolume) Available() bool {
-	return v.connected
+	return v.conn != nil
 }
 
 func (v *WebsocketVolume) Stat(path string) (*volume.FileInfo, error) {
@@ -288,18 +334,7 @@ func (v *WebsocketVolume) Stat(path string) (*volume.FileInfo, error) {
 	var stat volume.FileInfo
 	err := v.request(ReqData{"op": "stat", "path": path}, &stat)
 	if err != nil {
-		if err.Error() == "noent" {
-			v.statCache.set(path, nil)
-			return nil, &os.PathError{
-				Op:   "stat",
-				Path: path,
-				Err:  volume.NoentError,
-			}
-		}
 		return nil, err
-	}
-	if stat.Path == "" {
-		return nil, fmt.Errorf("stat: invalid response")
 	}
 	v.statCache.set(path, &stat)
 	return &stat, nil
@@ -327,7 +362,7 @@ func (f *fileHandle) ReadAt(b []byte, offset int64) (int, error) {
 		}
 	}
 	v := f.volume
-	msg, err := v.requestRaw(ReqData{"op": "read", "path": f.path, "p": offset, "l": sz})
+	msg, err := v.requestRaw(ReqData{"op": "read", "path": f.path, "p": offset, "l": sz}, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -348,7 +383,8 @@ func (f *fileHandle) WriteAt(b []byte, offset int64) (int, error) {
 	f.readBuffer = nil
 	v := f.volume
 	var len int
-	err := v.request(ReqData{"op": "write", "path": f.path, "p": offset, "b": string(b)}, &len)
+
+	_, err := v.requestRaw(ReqData{"op": "write", "path": f.path, "p": offset}, b)
 	if err != nil {
 		return 0, err
 	}

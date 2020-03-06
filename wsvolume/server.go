@@ -3,6 +3,7 @@ package wsvolume
 import (
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -67,16 +68,21 @@ func (wp *WebsocketVolumeProvider) HandleSession(conn *websocket.Conn, target st
 	conn.WriteJSON(&map[string]interface{}{})
 	wp.connected = true
 	defer func() { wp.connected = false }()
-	ConnectClient(wp.volume, conn, target) // TODO: refactoring
+
+	log.Println("connect", target)
+	c := &wsVolumeProviderConn{v: wp.volume, conn: conn}
+	c.handleFileCommands()
+	log.Println("disconnect")
 	return nil
 }
 
-func errorResponse(rid interface{}, msg string) *map[string]interface{} {
-	return &map[string]interface{}{"error": msg, "rid": rid}
+type wsVolumeProviderConn struct {
+	v    volume.FS
+	conn *websocket.Conn
 }
 
-func readBlock(v volume.FS, path string, dst []byte, offset int64) (int, error) {
-	f, err := v.Open(path)
+func (c *wsVolumeProviderConn) readBlock(path string, dst []byte, offset int64) (int, error) {
+	f, err := c.v.Open(path)
 	if err != nil {
 		return 0, err
 	}
@@ -87,80 +93,118 @@ func readBlock(v volume.FS, path string, dst []byte, offset int64) (int, error) 
 	return 0, err
 }
 
-func writeBlock(v volume.FS, path string, dst []byte, offset int64) (int, error) {
-	f, err := v.Open(path)
+func (c *wsVolumeProviderConn) writeBlock(path string, data []byte, offset int64) (int, error) {
+	f, err := c.v.OpenFile(path, os.O_WRONLY|os.O_CREATE, 0)
 	if err != nil {
 		return 0, err
 	}
 	defer f.Close()
 	if r, ok := f.(io.WriterAt); ok {
-		return r.WriteAt(dst, offset)
+		return r.WriteAt(data, offset)
 	}
 	return 0, err
 }
 
-func fileOperation(v volume.FS, conn *websocket.Conn) {
+func (c *wsVolumeProviderConn) response(rid interface{}, data interface{}) error {
+	if data == nil {
+		return c.conn.WriteJSON(&map[string]interface{}{"rid": rid})
+	}
+	return c.conn.WriteJSON(&map[string]interface{}{"rid": rid, "data": data})
+}
+
+func (c *wsVolumeProviderConn) errorResponse(rid interface{}, err error, op string) error {
+	var msg string
+	if os.IsNotExist(err) {
+		msg = "noent"
+	} else {
+		msg = op + " error"
+	}
+	return c.conn.WriteJSON(&map[string]interface{}{"error": msg, "rid": rid})
+}
+
+func (c *wsVolumeProviderConn) readCommand() (map[string]json.Number, []byte, error) {
+	mt, msg, err := c.conn.ReadMessage()
+	if err != nil {
+		return nil, nil, err
+	}
+	var op map[string]json.Number
+	switch mt {
+	case websocket.TextMessage:
+		if err := json.Unmarshal(msg, &op); err != nil {
+			return nil, nil, err
+		}
+		return op, nil, err
+	case websocket.BinaryMessage:
+		sz := binary.LittleEndian.Uint32(msg[4:])
+		if err := json.Unmarshal(msg[8:8+sz], &op); err != nil {
+			return nil, nil, err
+		}
+		return op, msg[8+sz:], err
+	default:
+		return nil, nil, fmt.Errorf("invalid message type")
+	}
+}
+
+func (c *wsVolumeProviderConn) handleFileCommands() {
 	for {
-		var op map[string]json.Number
-		err := conn.ReadJSON(&op)
+		op, data, err := c.readCommand()
 		if err != nil {
 			return
 		}
-		log.Print("op:", op)
+		log.Print("op:", op["op"], op["path"])
 		rid := op["rid"]
 		switch op["op"].String() {
 		case "stat":
-			st, err := v.Stat(op["path"].String())
+			st, err := c.v.Stat(op["path"].String())
 			if err != nil {
-				if os.IsNotExist(err) {
-					conn.WriteJSON(errorResponse(rid, "noent"))
-				} else {
-					log.Print("stat error", err)
-					conn.WriteJSON(errorResponse(rid, "stat error"))
-				}
-				continue
+				c.errorResponse(rid, err, "stat")
+			} else {
+				c.response(rid, st)
 			}
-			conn.WriteJSON(&map[string]interface{}{"rid": rid, "data": st})
 		case "read":
 			l, _ := op["l"].Int64()
 			p, _ := op["p"].Int64()
 			b := make([]byte, l+8)
-			len, _ := readBlock(v, op["path"].String(), b[8:], p)
 			ridint, _ := rid.Int64()
-			binary.LittleEndian.PutUint32(b[4:], uint32(ridint))
-			conn.WriteMessage(websocket.BinaryMessage, b[:(8+len)])
+
+			len, err := c.readBlock(op["path"].String(), b[8:], p)
+			if err != nil {
+				c.errorResponse(rid, err, "read")
+			} else {
+				binary.LittleEndian.PutUint32(b[4:], uint32(ridint))
+				c.conn.WriteMessage(websocket.BinaryMessage, b[:(8+len)])
+			}
 		case "write":
 			p, _ := op["p"].Int64()
-			b := []byte(op["b"].String())
-			len, _ := writeBlock(v, op["path"].String(), b, p)
-			conn.WriteJSON(&map[string]interface{}{"rid": rid, "data": len})
-		case "remove":
-			_ = v.Remove(op["path"].String())
-			conn.WriteJSON(&map[string]interface{}{"rid": rid})
-		case "files":
-			files, err := v.ReadDir(op["path"].String())
+			len, err := c.writeBlock(op["path"].String(), data, p)
 			if err != nil {
-				conn.WriteJSON(errorResponse(rid, "readdir error"))
-				continue
+				c.errorResponse(rid, err, "write")
+			} else {
+				c.response(rid, len)
 			}
-			conn.WriteJSON(&map[string]interface{}{"rid": rid, "data": files})
+		case "remove":
+			err := c.v.Remove(op["path"].String())
+			if err != nil {
+				c.errorResponse(rid, err, "remove")
+			} else {
+				c.response(rid, nil)
+			}
+		case "files":
+			files, err := c.v.ReadDir(op["path"].String())
+			if err != nil {
+				c.errorResponse(rid, err, "readdir")
+			} else {
+				c.response(rid, files)
+			}
+		case "mkdir":
+			err := c.v.Mkdir(op["path"].String(), 0)
+			if err != nil {
+				c.errorResponse(rid, err, "remove")
+			} else {
+				c.response(rid, nil)
+			}
 		default:
-			conn.WriteJSON(errorResponse(rid, "unknown operation"))
+			c.errorResponse(rid, nil, "unknown operation")
 		}
 	}
-}
-
-func ConnectClient(v volume.FS, conn *websocket.Conn, target string) {
-	log.Println("connect", target)
-	var event map[string]string
-	if target == "file" {
-		fileOperation(v, conn)
-	} else {
-		err := conn.ReadJSON(&event)
-		if err != nil {
-			return
-		}
-		log.Println(event)
-	}
-	log.Println("disconnect")
 }

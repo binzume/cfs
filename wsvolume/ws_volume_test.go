@@ -141,7 +141,43 @@ func TestWsVolume_Connect2(t *testing.T) {
 	if _, ok := err.(*os.PathError); !ok {
 		t.Errorf("Stat should return pathError. path: %v err: %v", "notfound.txt", err)
 	}
+	if !os.IsNotExist(err) {
+		t.Errorf("invalid error: %v", err)
+	}
 	if stat != nil {
 		t.Errorf("stat != nil: %v", stat)
 	}
+
+	err = vol.Remove("notfound.txt")
+	if !os.IsNotExist(err) {
+		t.Errorf("invalid error: %v", err)
+	}
+
+	err = vol.Mkdir("createddir", 0)
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	err = vol.Remove("createddir")
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+
+	// create/write/remove
+	w, err := vol.Create("created.txt")
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	_, err = w.Write([]byte("Hello"))
+	if err != nil {
+		t.Errorf("error: %v", err)
+	}
+	err = w.Close()
+	if err != nil {
+		t.Errorf("error: %v", err)
+	}
+	err = vol.Remove("created.txt")
+	if err != nil {
+		t.Errorf("error: %v", err)
+	}
+
 }
