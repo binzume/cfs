@@ -147,59 +147,60 @@ func (c *wsVolumeProviderConn) readCommand() (map[string]json.Number, []byte, er
 
 func (c *wsVolumeProviderConn) handleFileCommands() {
 	for {
-		op, data, err := c.readCommand()
+		cmd, data, err := c.readCommand()
 		if err != nil {
 			return
 		}
-		log.Print("op:", op["op"], op["path"])
-		rid := op["rid"]
-		switch op["op"].String() {
+		log.Print("op:", cmd["op"], cmd["path"])
+		rid := cmd["rid"]
+		op := cmd["op"].String()
+		switch op {
 		case "stat":
-			st, err := c.v.Stat(op["path"].String())
+			st, err := c.v.Stat(cmd["path"].String())
 			if err != nil {
-				c.errorResponse(rid, err, "stat")
+				c.errorResponse(rid, err, op)
 			} else {
 				c.response(rid, st)
 			}
 		case "read":
-			l, _ := op["l"].Int64()
-			p, _ := op["p"].Int64()
+			l, _ := cmd["l"].Int64()
+			p, _ := cmd["p"].Int64()
 			b := make([]byte, l+8)
 			ridint, _ := rid.Int64()
 
-			len, err := c.readBlock(op["path"].String(), b[8:], p)
+			len, err := c.readBlock(cmd["path"].String(), b[8:], p)
 			if err != nil {
-				c.errorResponse(rid, err, "read")
+				c.errorResponse(rid, err, op)
 			} else {
 				binary.LittleEndian.PutUint32(b[4:], uint32(ridint))
 				c.conn.WriteMessage(websocket.BinaryMessage, b[:(8+len)])
 			}
 		case "write":
-			p, _ := op["p"].Int64()
-			len, err := c.writeBlock(op["path"].String(), data, p)
+			p, _ := cmd["p"].Int64()
+			len, err := c.writeBlock(cmd["path"].String(), data, p)
 			if err != nil {
 				c.errorResponse(rid, err, "write")
 			} else {
 				c.response(rid, len)
 			}
 		case "remove":
-			err := c.v.Remove(op["path"].String())
+			err := c.v.Remove(cmd["path"].String())
 			if err != nil {
-				c.errorResponse(rid, err, "remove")
+				c.errorResponse(rid, err, op)
 			} else {
 				c.response(rid, nil)
 			}
 		case "files":
-			files, err := c.v.ReadDir(op["path"].String())
+			files, err := c.v.ReadDir(cmd["path"].String())
 			if err != nil {
-				c.errorResponse(rid, err, "readdir")
+				c.errorResponse(rid, err, op)
 			} else {
 				c.response(rid, files)
 			}
 		case "mkdir":
-			err := c.v.Mkdir(op["path"].String(), 0)
+			err := c.v.Mkdir(cmd["path"].String(), 0)
 			if err != nil {
-				c.errorResponse(rid, err, "remove")
+				c.errorResponse(rid, err, op)
 			} else {
 				c.response(rid, nil)
 			}

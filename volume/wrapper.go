@@ -86,13 +86,13 @@ func walkDir(v Volume, callback func(*FileInfo), p string) error {
 		return err
 	}
 	for _, f := range files {
+		f.Path = path.Join(p, f.Path)
 		if f.IsDir() {
 			err = walkDir(v, callback, f.Path)
 			if err != nil {
 				return err
 			}
 		} else {
-			f.Path = path.Join(p, f.Path)
 			callback(f)
 		}
 	}

@@ -20,6 +20,7 @@ import (
 )
 
 type rmsg struct {
+	typ    int
 	data   []byte
 	binary bool
 	err    error
@@ -33,7 +34,13 @@ type Cmd struct {
 	canceled bool
 }
 
+const (
+	MessageTypeResponce = 0
+	MessageTypeNotify   = 2
+)
+
 type ResponseJson struct {
+	Type  int             `json:"type"`
 	RID   uint32          `json:"rid"`
 	Error *string         `json:"error"`
 	Data  json.RawMessage `json:"data"`
@@ -47,11 +54,12 @@ func (e *RemoteError) Error() string {
 
 // WebsocketVolume ...
 type WebsocketVolume struct {
-	Name      string
-	lock      sync.Mutex
-	conn      io.Closer // TODO: multiple conns
-	wch       chan *Cmd
-	statCache statCache
+	Name           string
+	lock           sync.Mutex
+	conn           io.Closer // TODO: multiple conns
+	wch            chan *Cmd
+	statCache      statCache
+	notifyCallback func(data []byte)
 }
 
 type statCache struct {
@@ -166,7 +174,7 @@ func (c *wsVolumeConn) sendCommand(cmd *Cmd) error {
 	return nil
 }
 
-func (c *wsVolumeConn) readResponse() (*rmsg, uint32, error) {
+func (c *wsVolumeConn) readMessage() (*rmsg, uint32, error) {
 	mt, msg, err := c.conn.ReadMessage()
 	if err != nil {
 		return nil, 0, err
@@ -180,13 +188,14 @@ func (c *wsVolumeConn) readResponse() (*rmsg, uint32, error) {
 		if res.Error != nil {
 			err = (*RemoteError)(res.Error)
 		}
-		return &rmsg{res.Data, false, err}, res.RID, nil
+		return &rmsg{res.Type, res.Data, false, err}, res.RID, nil
 	case websocket.BinaryMessage:
 		if len(msg) < 8 {
 			return nil, 0, fmt.Errorf("invalid binary response")
 		}
+		typ := binary.LittleEndian.Uint32(msg[0:])
 		rid := binary.LittleEndian.Uint32(msg[4:])
-		return &rmsg{msg[8:], true, nil}, rid, nil
+		return &rmsg{int(typ), msg[8:], true, nil}, rid, nil
 	default:
 		return nil, 0, fmt.Errorf("invalid message type")
 	}
@@ -247,11 +256,17 @@ func (v *WebsocketVolume) BindConnection(conn *websocket.Conn) (<-chan struct{},
 		defer v.Terminate()
 		defer close(done)
 		for {
-			r, rid, err := c.readResponse()
+			msg, rid, err := c.readMessage()
 			if err != nil {
 				return
 			}
-			c.setResult(rid, r)
+			if msg.typ == MessageTypeResponce {
+				c.setResult(rid, msg)
+			} else if msg.typ == MessageTypeNotify {
+				if v.notifyCallback != nil {
+					v.notifyCallback(msg.data)
+				}
+			}
 		}
 	}()
 
