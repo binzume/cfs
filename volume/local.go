@@ -116,20 +116,20 @@ func (v *LocalVolume) Watch(callback func(FileEvent)) (io.Closer, error) {
 					path, _ := filepath.Rel(v.basePath, event.Name)
 					path = filepath.ToSlash(path)
 					if (event.Op & fsnotify.Write) != 0 {
-						callback(FileEvent{UpdateEvent, path})
+						callback(FileEvent{Type: UpdateEvent, Path: path})
 					} else if (event.Op & fsnotify.Create) != 0 {
 						info, err := os.Stat(event.Name)
 						if err == nil {
 							if info.IsDir() {
 								watcher.Add(event.Name)
 								v.walk(func(f *FileInfo) {
-									callback(FileEvent{CreateEvent, f.Path})
+									callback(FileEvent{Type: CreateEvent, Path: f.Path})
 								}, path)
 							}
-							callback(FileEvent{CreateEvent, path})
+							callback(FileEvent{Type: CreateEvent, Path: path})
 						}
 					} else if (event.Op & (fsnotify.Remove | fsnotify.Rename)) != 0 {
-						callback(FileEvent{RemoveEvent, path})
+						callback(FileEvent{Type: RemoveEvent, Path: path})
 					}
 				case err := <-watcher.Errors:
 					if err != nil {

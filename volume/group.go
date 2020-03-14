@@ -198,17 +198,21 @@ func (vg *VolumeGroup) Watch(callback func(f FileEvent)) (io.Closer, error) {
 func (vg *VolumeGroup) resolve(path string) (FS, string, bool) {
 	path = strings.TrimPrefix(path, "/")
 	vg.lock.RLock()
+	var v FS
+	var p string
 	defer vg.lock.RUnlock()
 	for _, e := range vg.vv {
 		if !e.v.Available() {
 			continue
 		}
-		if e.p == "" || e.p == path {
-			return ToFS(e.v), path[len(e.p):], true
+		if (e.p == "" || e.p == path) && len(e.p) >= len(p) {
+			v = ToFS(e.v)
+			p = path[len(e.p):]
 		}
-		if strings.HasPrefix(path, e.p+"/") {
-			return ToFS(e.v), path[len(e.p)+1:], true
+		if strings.HasPrefix(path, e.p+"/") && len(e.p)+1 > len(p) {
+			v = ToFS(e.v)
+			p = path[len(e.p)+1:]
 		}
 	}
-	return nil, "", false
+	return v, p, v != nil
 }
