@@ -169,7 +169,7 @@ func (c *wsVolumeProviderConn) handleFileCommands() {
 			ridint, _ := rid.Int64()
 
 			len, err := c.readBlock(cmd["path"].String(), b[8:], p)
-			if err != nil {
+			if err != nil && len == 0 {
 				c.errorResponse(rid, err, op)
 			} else {
 				binary.LittleEndian.PutUint32(b[4:], uint32(ridint))

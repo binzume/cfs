@@ -111,6 +111,16 @@ func (c *statCache) delete(path string) {
 	defer c.lock.Unlock()
 	delete(c.c, path)
 }
+func (c *statCache) checkAll() {
+	now := time.Now()
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	for path, s := range c.c {
+		if now.After(s.time.Add(statCacheExpireTime)) {
+			delete(c.c, path)
+		}
+	}
+}
 
 // Start volume backend.
 func (v *WebsocketVolume) StartClient(connector websocketConnector) (<-chan struct{}, error) {
@@ -365,7 +375,8 @@ type fileHandle struct {
 }
 
 func (f *fileHandle) ReadAt(b []byte, offset int64) (int, error) {
-	if offset >= f.readBufferOffset && offset+int64(len(b)) <= f.readBufferOffset+int64(len(f.readBuffer)) {
+	// if offset >= f.readBufferOffset && offset+int64(len(b)) <= f.readBufferOffset+int64(len(f.readBuffer)) {
+	if offset >= f.readBufferOffset && offset < f.readBufferOffset+int64(len(f.readBuffer)) {
 		return copy(b, f.readBuffer[offset-f.readBufferOffset:]), nil
 	}
 
@@ -387,10 +398,11 @@ func (f *fileHandle) ReadAt(b []byte, offset int64) (int, error) {
 	if len(msg.data) == 0 {
 		return 0, io.EOF
 	}
-	f.lastReadPos = offset + int64(len(msg.data))
+	l := copy(b, msg.data)
+	f.lastReadPos = offset + int64(l)
 	f.readBufferOffset = offset
 	f.readBuffer = msg.data
-	return copy(b, msg.data), nil
+	return l, nil
 }
 
 func (f *fileHandle) WriteAt(b []byte, offset int64) (int, error) {
