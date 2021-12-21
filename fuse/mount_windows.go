@@ -26,13 +26,28 @@ func (fs *fuseFs) WithContext(ctx context.Context) (context.Context, context.Can
 
 func (fs *fuseFs) CreateFile(ctx context.Context, fi *dokan.FileInfo, cd *dokan.CreateData) (dokan.File, bool, error) {
 	path := strings.TrimLeft(strings.Replace(fi.Path()[1:], "\\", "/", -1), "/")
+	if cd.CreateDisposition == dokan.FileCreate {
+		file, err := fs.v.OpenFile(path, os.O_WRONLY|os.O_CREATE, 0)
+		if err != nil {
+			return nil, false, err
+		}
+		_, err = file.WriteAt([]byte{}, 0)
+		if err != nil {
+			return nil, false, err
+		}
+		return &fuseDir{v: fs.v, path: path, st: nil, file: file}, false, nil
+	}
 	st, err := fs.v.Stat(path)
 	if err != nil {
 		return nil, false, err
 	}
 	var file volume.File
 	if !st.IsDir() {
-		file, err = fs.v.OpenFile(path, 0, 0)
+		flag := 0
+		if cd.DesiredAccess == 0x17019F { // TODO
+			flag = os.O_RDWR
+		}
+		file, err = fs.v.OpenFile(path, flag, 0)
 		if err != nil {
 			return nil, false, err
 		}
@@ -41,12 +56,13 @@ func (fs *fuseFs) CreateFile(ctx context.Context, fi *dokan.FileInfo, cd *dokan.
 }
 
 func (fs *fuseFs) GetDiskFreeSpace(ctx context.Context) (dokan.FreeSpace, error) {
-	log.Print("GetDiskFreeSpace")
-	return dokan.FreeSpace{}, nil
+	// log.Print("GetDiskFreeSpace")
+	var sz uint64 = 1024 * 1024 * 1024 * 100 // 100GB
+	return dokan.FreeSpace{FreeBytesAvailable: sz, TotalNumberOfBytes: sz, TotalNumberOfFreeBytes: sz}, nil
 }
 
 func (fs *fuseFs) GetVolumeInformation(ctx context.Context) (dokan.VolumeInformation, error) {
-	log.Print("GetVolumeInformation")
+	// log.Print("GetVolumeInformation")
 	return dokan.VolumeInformation{}, nil
 }
 
