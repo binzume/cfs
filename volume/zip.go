@@ -183,13 +183,17 @@ func NewAutoUnzipVolume(v Volume) FS {
 	return &AutoUnzipVolume{ToFS(v)}
 }
 
+func (v *AutoUnzipVolume) IsZipFile(path string) bool {
+	return strings.HasSuffix(path, ".zip") || strings.HasSuffix(path, ".ZIP")
+}
+
 func (v *AutoUnzipVolume) Open(path string) (reader FileReadCloser, err error) {
 	reader, err = v.FS.Open(path)
 	if err == nil {
 		return
 	}
 	pathAndName := strings.SplitN(path, "/"+zipSep+"/", 2)
-	if len(pathAndName) == 2 && strings.HasSuffix(pathAndName[0], ".zip") {
+	if len(pathAndName) == 2 && v.IsZipFile(pathAndName[0]) {
 		zv := &ZipVolume{v.FS, pathAndName[0]}
 		return zv.Open(pathAndName[1])
 	}
@@ -202,7 +206,7 @@ func (v *AutoUnzipVolume) Stat(path string) (stat *FileInfo, err error) {
 		return
 	}
 	pathAndName := strings.SplitN(path, "/"+zipSep+"/", 2)
-	if len(pathAndName) == 2 && strings.HasSuffix(pathAndName[0], ".zip") {
+	if len(pathAndName) == 2 && v.IsZipFile(pathAndName[0]) {
 		zv := &ZipVolume{v.FS, pathAndName[0]}
 		stat, err := zv.Stat(pathAndName[1])
 		if stat != nil {
@@ -221,7 +225,7 @@ func (v *AutoUnzipVolume) ReadDir(path string) (files []*FileInfo, err error) {
 	pathAndName := strings.SplitN(path, "/"+zipSep+"/", 2)
 
 	fi, err2 := v.Stat(pathAndName[0])
-	if err2 == nil && !fi.IsDir() && strings.HasSuffix(pathAndName[0], ".zip") {
+	if err2 == nil && !fi.IsDir() && v.IsZipFile(pathAndName[0]) {
 		zv := &ZipVolume{v.FS, pathAndName[0]}
 		files, err = zv.ReadDir("")
 		for _, fi := range files {
