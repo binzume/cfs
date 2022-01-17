@@ -1,2 +1,5 @@
 *.exe
 cmd/cfs/data
+cover.out
+
+.vscode

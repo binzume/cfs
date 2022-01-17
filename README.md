@@ -1,6 +1,6 @@
 # [WIP] Simple FileSystem abstraction layer library for Golang
 
-[![Build Status](https://travis-ci.com/binzume/cfs.svg?branch=master)](https://travis-ci.com/binzume/cfs)
+[![Build Status](https://github.com/binzume/cfs/actions/workflows/test.yaml/badge.svg)](https://github.com/binzume/cfs/actions)
 [![codecov](https://codecov.io/gh/binzume/cfs/branch/master/graph/badge.svg)](https://codecov.io/gh/binzume/cfs)
 [![GoDoc](https://godoc.org/github.com/binzume/cfs?status.svg)](https://godoc.org/github.com/binzume/cfs)
 [![license](https://img.shields.io/badge/license-MIT-4183c4.svg)](https://github.com/binzume/cfs/blob/master/LICENSE)
