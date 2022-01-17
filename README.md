@@ -1,4 +1,4 @@
-# [WIP] Simple FileSystem abstraction layer library for Golang
+# [WIP] Simple FileSystem abstraction layer library for Go
 
 [![Build Status](https://github.com/binzume/cfs/actions/workflows/test.yaml/badge.svg)](https://github.com/binzume/cfs/actions)
 [![codecov](https://codecov.io/gh/binzume/cfs/branch/master/graph/badge.svg)](https://codecov.io/gh/binzume/cfs)
@@ -8,6 +8,7 @@
 - Consistent API for multiple backends.
 - Easy to implement backends.
 - FUSE support (Windows/Linux)
+- TODO: fs.FS interface
 
 ## Backend
 
