@@ -1,13 +1,13 @@
-package httpvolume
+package httpfs
 
 import (
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
-	"os"
 	"path"
 	"time"
 
@@ -20,17 +20,18 @@ var RequestLogger *log.Logger
 // UserAgent for HTTP request
 var UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.169 Safari/537.36 github.com/binzume/cfs/httpvolume"
 
-type httpVolume struct {
+type httpFS struct {
 	httpClient *http.Client
 	baseURL    string
 	lazyOpen   bool
+	UserAgent  string
 }
 
-// NewHTTPVolume returns a new volume. baseURL is optional.
-func NewHTTPVolume(baseURL string, lazyOpen bool) volume.Volume {
+// New returns a new FS. baseURL is optional.
+func NewFS(baseURL string, lazyOpen bool) fs.StatFS {
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{Jar: jar, Transport: &requestHandler{}}
-	return &httpVolume{httpClient: client, baseURL: baseURL, lazyOpen: lazyOpen}
+	return &httpFS{httpClient: client, baseURL: baseURL, lazyOpen: lazyOpen}
 }
 
 type requestHandler struct{}
@@ -43,23 +44,19 @@ func (t *requestHandler) RoundTrip(req *http.Request) (*http.Response, error) {
 	return http.DefaultTransport.RoundTrip(req)
 }
 
-func (v *httpVolume) Available() bool {
-	return true
-}
-
-func (v *httpVolume) Stat(path string) (*volume.FileInfo, error) {
+func (v *httpFS) Stat(path string) (fs.FileInfo, error) {
 	req, err := http.NewRequest("HEAD", v.getURL(path), nil)
 	if err != nil {
-		return nil, &os.PathError{Op: "Stat", Path: path, Err: err}
+		return nil, &fs.PathError{Op: "Stat", Path: path, Err: err}
 	}
 	res, err := v.httpClient.Do(req)
 	if err != nil {
-		return nil, &os.PathError{Op: "Stat", Path: path, Err: err}
+		return nil, &fs.PathError{Op: "Stat", Path: path, Err: err}
 	}
 	defer res.Body.Close()
 
 	if res.StatusCode >= 400 {
-		return nil, &os.PathError{Op: "Stat", Path: path}
+		return nil, &fs.PathError{Op: "Stat", Path: path}
 	}
 
 	modifiedTime, _ := time.Parse(http.TimeFormat, res.Header.Get("Last-Modified"))
@@ -70,12 +67,12 @@ func (v *httpVolume) Stat(path string) (*volume.FileInfo, error) {
 	}, nil
 }
 
-func (v *httpVolume) ReadDir(path string) ([]*volume.FileInfo, error) {
+func (v *httpFS) ReadDir(path string) ([]fs.DirEntry, error) {
 	return nil, volume.UnsupportedError
 }
 
 type httpReader struct {
-	v       *httpVolume
+	v       *httpFS
 	url     string
 	body    io.ReadCloser
 	bodyPos int64
@@ -84,18 +81,22 @@ type httpReader struct {
 func (hr *httpReader) open() error {
 	req, err := http.NewRequest("GET", hr.url, nil)
 	if err != nil {
-		return &os.PathError{Op: "Open", Path: hr.url, Err: err}
+		return &fs.PathError{Op: "Open", Path: hr.url, Err: err}
 	}
 	res, err := hr.v.httpClient.Do(req)
 	if err != nil {
-		return &os.PathError{Op: "Open", Path: hr.url, Err: err}
+		return &fs.PathError{Op: "Open", Path: hr.url, Err: err}
 	}
 	if res.StatusCode >= 400 {
 		res.Body.Close()
-		return &os.PathError{Op: "Open", Path: hr.url}
+		return &fs.PathError{Op: "Open", Path: hr.url}
 	}
 	hr.body = res.Body
 	return nil
+}
+
+func (hr *httpReader) Stat() (n fs.FileInfo, err error) {
+	return hr.v.Stat(hr.url)
 }
 
 func (hr *httpReader) Read(p []byte) (n int, err error) {
@@ -123,22 +124,22 @@ func (hr *httpReader) ReadAt(p []byte, off int64) (n int, err error) {
 	}
 	req, err := http.NewRequest("GET", hr.url, nil)
 	if err != nil {
-		return 0, &os.PathError{Op: "ReadAt", Path: hr.url, Err: err}
+		return 0, &fs.PathError{Op: "ReadAt", Path: hr.url, Err: err}
 	}
 	req.Header.Add("Range", fmt.Sprintf("bytes=%v-%v", off, off+int64(len(p))-1))
 	res, err := hr.v.httpClient.Do(req)
 	if err != nil {
-		return 0, &os.PathError{Op: "ReadAt", Path: hr.url, Err: err}
+		return 0, &fs.PathError{Op: "ReadAt", Path: hr.url, Err: err}
 	}
 	defer res.Body.Close()
 	n, err = res.Body.Read(p)
 	if res.StatusCode >= 400 {
-		err = &os.PathError{Op: "ReadAt", Path: hr.url}
+		err = &fs.PathError{Op: "ReadAt", Path: hr.url}
 	}
 	return
 }
 
-func (v *httpVolume) Open(path string) (reader volume.FileReadCloser, err error) {
+func (v *httpFS) Open(path string) (reader fs.File, err error) {
 	url := v.getURL(path)
 	hr := &httpReader{v: v, url: url}
 	if v.lazyOpen {
@@ -151,7 +152,7 @@ func (v *httpVolume) Open(path string) (reader volume.FileReadCloser, err error)
 	return hr, nil
 }
 
-func (v *httpVolume) getURL(vpath string) string {
+func (v *httpFS) getURL(vpath string) string {
 	if v.baseURL == "" {
 		return vpath
 	}

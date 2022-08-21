@@ -1,7 +1,8 @@
-package httpvolume
+package httpfs
 
 import (
 	"io"
+	"io/fs"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -14,13 +15,6 @@ func init() {
 	RequestLogger = log.New(os.Stderr, "", log.LstdFlags)
 }
 
-func TestHttpVolume(t *testing.T) {
-	var vol = NewHTTPVolume("", false)
-	if !vol.Available() {
-		t.Errorf("not available")
-	}
-}
-
 func TestHttpVolume_Stat(t *testing.T) {
 	testHandler := http.NewServeMux()
 	testHandler.Handle("/index.txt", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -29,7 +23,7 @@ func TestHttpVolume_Stat(t *testing.T) {
 	testServer := httptest.NewServer(testHandler)
 	defer testServer.Close()
 
-	var vol = NewHTTPVolume("", false)
+	var vol = NewFS("", false)
 
 	stat, err := vol.Stat(testServer.URL + "/index.txt")
 	if err != nil {
@@ -54,7 +48,7 @@ func TestHttpVolume_Stat(t *testing.T) {
 		t.Errorf("should return pathError. err: %v", err)
 	}
 
-	var vol2 = NewHTTPVolume(testServer.URL, false)
+	var vol2 = NewFS(testServer.URL, false)
 	stat, err = vol2.Stat("index.txt")
 	if err != nil {
 		t.Errorf("error: %v", err)
@@ -73,7 +67,7 @@ func TestHttpVolume_Open(t *testing.T) {
 	testServer := httptest.NewServer(testHandler)
 	defer testServer.Close()
 
-	var vol = NewHTTPVolume("", false)
+	var vol = NewFS("", false)
 
 	r, err := vol.Open(testServer.URL + "/index.txt")
 	if err != nil {
@@ -102,7 +96,7 @@ func TestHttpVolume_Open(t *testing.T) {
 	}
 
 	// lazy
-	var vol3 = NewHTTPVolume("", true)
+	var vol3 = NewFS("", true)
 	r, err = vol3.Open("notfound.txt")
 	if err != nil {
 		t.Errorf("error: %v", err)
@@ -122,10 +116,10 @@ func TestHttpVolume_ReadDir(t *testing.T) {
 	testServer := httptest.NewServer(testHandler)
 	defer testServer.Close()
 
-	var vol = NewHTTPVolume(testServer.URL, false)
+	var vol = NewFS(testServer.URL, false)
 
 	// TODO
-	_, _ = vol.ReadDir("")
+	_, _ = fs.ReadDir(vol, "")
 }
 
 func TestHttpVolume_ReadAt(t *testing.T) {
@@ -138,7 +132,7 @@ func TestHttpVolume_ReadAt(t *testing.T) {
 	testServer := httptest.NewServer(testHandler)
 	defer testServer.Close()
 
-	var vol = NewHTTPVolume("", true)
+	var vol = NewFS("", true)
 
 	r, err := vol.Open(testServer.URL + "/index.txt")
 	if err != nil {
@@ -148,6 +142,7 @@ func TestHttpVolume_ReadAt(t *testing.T) {
 	if reqCount != 0 {
 		t.Errorf("reqCount: %v", reqCount)
 	}
+	ra := r.(io.ReaderAt)
 
 	// sequential read
 	b := make([]byte, 6)
@@ -155,7 +150,7 @@ func TestHttpVolume_ReadAt(t *testing.T) {
 	errs := []error{nil, nil, io.EOF}
 	contents := []string{"012345", "6789ab", "cdef"}
 	for i, ofs := range offsets {
-		n, err := r.ReadAt(b, ofs)
+		n, err := ra.ReadAt(b, ofs)
 		if err != errs[i] {
 			t.Errorf("error: %v", err)
 		}
@@ -168,7 +163,7 @@ func TestHttpVolume_ReadAt(t *testing.T) {
 	}
 
 	// random access
-	_, err = r.ReadAt(b, 3)
+	_, err = ra.ReadAt(b, 3)
 	if err != nil {
 		t.Errorf("error: %v", err)
 	}
@@ -182,7 +177,8 @@ func TestHttpVolume_ReadAt(t *testing.T) {
 		t.Errorf("error: %v", err)
 	}
 	defer r.Close()
-	_, err = r.ReadAt(b, 1)
+	ra = r.(io.ReaderAt)
+	_, err = ra.ReadAt(b, 1)
 	if _, ok := err.(*os.PathError); !ok {
 		t.Errorf("should return pathError. err: %v", err)
 	}
