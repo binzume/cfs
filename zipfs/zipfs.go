@@ -1,4 +1,4 @@
-package volume
+package zipfs
 
 import (
 	"archive/zip"
