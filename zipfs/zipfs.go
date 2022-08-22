@@ -3,13 +3,12 @@ package zipfs
 import (
 	"archive/zip"
 	"bytes"
+	"errors"
 	"io"
 	"io/fs"
 	"io/ioutil"
 	"os"
 	"strings"
-
-	"github.com/binzume/cfs/volume"
 )
 
 type ZipFS struct {
@@ -17,7 +16,7 @@ type ZipFS struct {
 	path string
 }
 
-// NewFS returns a new FS.
+// NewFS returns a new FS. (fsys = nil : native path)
 func NewFS(path string, fsys fs.FS) fs.StatFS {
 	return &ZipFS{fsys: fsys, path: path}
 }
@@ -106,7 +105,7 @@ func (v *ZipFS) openZip() (io.Closer, *zip.Reader, error) {
 
 	readerAt, ok := fr.(io.ReaderAt)
 	if !ok {
-		return nil, nil, volume.UnsupportedError
+		return nil, nil, &fs.PathError{Op: "open", Path: v.path, Err: errors.New("ReaderAt not implemented")}
 	}
 
 	r, err := zip.NewReader(readerAt, stat.Size())
@@ -119,7 +118,11 @@ func (v *ZipFS) openZip() (io.Closer, *zip.Reader, error) {
 
 func (v *ZipFS) Stat(path string) (fs.FileInfo, error) {
 	if path == "" {
-		return &volume.FileInfo{Path: path, FileMode: os.ModeDir}, nil
+		stat, err := fs.Stat(v.fsys, v.path)
+		if stat != nil {
+			stat = &modeDirOverride{stat}
+		}
+		return stat, err
 	}
 	closer, r, err := v.openZip()
 	if err != nil {
@@ -130,27 +133,50 @@ func (v *ZipFS) Stat(path string) (fs.FileInfo, error) {
 		if !strings.HasSuffix("/"+f.Name, "/"+path) {
 			continue
 		}
-		fi := f.FileInfo()
-		return &volume.FileInfo{
-			Path:        f.Name,
-			FileMode:    fi.Mode(),
-			FileSize:    fi.Size(),
-			UpdatedTime: fi.ModTime(),
-		}, nil
+		return &fileEntry{FileInfo: f.FileInfo(), rawName: f.Name}, nil
 	}
 	return nil, fs.ErrNotExist
 }
 
 type fileEntry struct {
-	volume.FileInfo
+	rawName string
+	fs.FileInfo
 }
 
-func (f *fileEntry) Type() os.FileMode {
-	return f.FileMode
+func (f *fileEntry) Name() string {
+	return f.rawName
+}
+
+func (f *fileEntry) Type() fs.FileMode {
+	return f.Mode().Type()
 }
 
 func (f *fileEntry) Info() (fs.FileInfo, error) {
-	return &f.FileInfo, nil
+	return f, nil
+}
+
+type modeDirOverride struct {
+	fs.FileInfo
+}
+
+func (f *modeDirOverride) IsDir() bool {
+	return true
+}
+
+type modeDirOverrideDirEnt struct {
+	fs.DirEntry
+}
+
+func (f *modeDirOverrideDirEnt) IsDir() bool {
+	return true
+}
+
+func (f *modeDirOverrideDirEnt) Info() (fs.FileInfo, error) {
+	info, err := f.DirEntry.Info()
+	if info != nil {
+		info = &modeDirOverride{info}
+	}
+	return info, err
 }
 
 func (v *ZipFS) ReadDir(path string) ([]fs.DirEntry, error) {
@@ -166,12 +192,10 @@ func (v *ZipFS) ReadDir(path string) ([]fs.DirEntry, error) {
 		if fi.IsDir() {
 			continue
 		}
-		fe := &fileEntry{volume.FileInfo{
-			Path:        f.Name,
-			FileMode:    fi.Mode(),
-			FileSize:    fi.Size(),
-			UpdatedTime: fi.ModTime(),
-		}}
+		fe := &fileEntry{
+			rawName:  f.Name,
+			FileInfo: fi,
+		}
 		files = append(files, fe)
 	}
 	return files, nil
@@ -191,26 +215,20 @@ func (v *ZipFS) Open(path string) (reader fs.File, err error) {
 		opener := func() (io.ReadCloser, error) {
 			return f.Open()
 		}
-		stat := &volume.FileInfo{
-			Path:        f.Name,
-			FileMode:    fi.Mode(),
-			FileSize:    fi.Size(),
-			UpdatedTime: fi.ModTime(),
-		}
-		return &zipFileReader{opener: opener, parentCloser: closer, size: fi.Size(), stat: stat}, nil
+		return &zipFileReader{opener: opener, parentCloser: closer, size: fi.Size(), stat: fi}, nil
 	}
 	closer.Close()
 	return nil, fs.ErrNotExist
 }
 
-const zipSep = ":"
-
 type AutoUnzipFS struct {
 	fs.FS
+	ModeDir   bool
+	zipPrefix string
 }
 
 func NewAutoUnzipFS(fsys fs.FS) fs.FS {
-	return &AutoUnzipFS{FS: fsys}
+	return &AutoUnzipFS{FS: fsys, ModeDir: true, zipPrefix: ":/"}
 }
 
 func (v *AutoUnzipFS) IsZipFile(path string) bool {
@@ -222,7 +240,7 @@ func (v *AutoUnzipFS) Open(path string) (reader fs.File, err error) {
 	if err == nil {
 		return
 	}
-	pathAndName := strings.SplitN(path, "/"+zipSep+"/", 2)
+	pathAndName := strings.SplitN(path, "/"+v.zipPrefix, 2)
 	if len(pathAndName) == 2 && v.IsZipFile(pathAndName[0]) {
 		zv := &ZipFS{v.FS, pathAndName[0]}
 		return zv.Open(pathAndName[1])
@@ -233,14 +251,17 @@ func (v *AutoUnzipFS) Open(path string) (reader fs.File, err error) {
 func (v *AutoUnzipFS) Stat(path string) (stat fs.FileInfo, err error) {
 	stat, err = fs.Stat(v.FS, path)
 	if err == nil {
+		if v.ModeDir && !stat.IsDir() && v.IsZipFile(stat.Name()) {
+			stat = &modeDirOverride{stat}
+		}
 		return
 	}
-	pathAndName := strings.SplitN(path, "/"+zipSep+"/", 2)
+	pathAndName := strings.SplitN(path, "/"+v.zipPrefix, 2)
 	if len(pathAndName) == 2 && v.IsZipFile(pathAndName[0]) {
 		zv := &ZipFS{v.FS, pathAndName[0]}
 		stat, err := zv.Stat(pathAndName[1])
-		if stat, ok := stat.(*volume.FileInfo); ok {
-			stat.Path = pathAndName[0] + "/" + zipSep + "/" + stat.Path
+		if stat, ok := stat.(*fileEntry); ok {
+			stat.rawName = v.zipPrefix + stat.rawName
 		}
 		return stat, err
 	}
@@ -250,17 +271,26 @@ func (v *AutoUnzipFS) Stat(path string) (stat fs.FileInfo, err error) {
 func (v *AutoUnzipFS) ReadDir(path string) (files []fs.DirEntry, err error) {
 	files, err = fs.ReadDir(v.FS, path)
 	if err == nil {
+		if v.ModeDir {
+			for i := range files {
+				if !files[i].IsDir() && v.IsZipFile(files[i].Name()) {
+					files[i] = &modeDirOverrideDirEnt{files[i]}
+				}
+			}
+		}
 		return
 	}
-	pathAndName := strings.SplitN(path, "/"+zipSep+"/", 2)
-
-	fi, err2 := v.Stat(pathAndName[0])
-	if err2 == nil && !fi.IsDir() && v.IsZipFile(pathAndName[0]) {
+	pathAndName := strings.SplitN(path, "/"+v.zipPrefix, 2)
+	if !v.IsZipFile(pathAndName[0]) {
+		return
+	}
+	fi, err2 := fs.Stat(v.FS, pathAndName[0])
+	if err2 == nil && !fi.IsDir() {
 		zv := &ZipFS{v.FS, pathAndName[0]}
 		files, err = zv.ReadDir("")
 		for _, fi := range files {
 			if fi, ok := fi.(*fileEntry); ok {
-				fi.Path = zipSep + "/" + fi.Path
+				fi.rawName = v.zipPrefix + fi.rawName
 			}
 		}
 	}
