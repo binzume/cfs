@@ -19,7 +19,7 @@ jobs:
     - name: Build
       run: go build -v ./...
     - name: Test
-      run: go test -v -cover -coverprofile=cover.out ./volume ./httpvolume
+      run: go test -v -cover -coverprofile=cover.out ./volume ./httpfs ./zipfs
     - name: Codecov
       uses: codecov/codecov-action@v2
       with:
