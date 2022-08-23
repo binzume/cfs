@@ -7,7 +7,6 @@ require (
 	github.com/gin-gonic/gin v1.7.7
 	github.com/gorilla/websocket v1.4.2
 	github.com/hanwen/go-fuse v1.0.0
-	github.com/keybase/dokan-go v0.0.0-20171016134211-b7c8fa8b5dd6
 	github.com/keybase/kbfs v2.11.0+incompatible
 )
 
