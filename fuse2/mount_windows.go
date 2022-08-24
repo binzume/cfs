@@ -39,6 +39,9 @@ func (ffs *fuseFs) WithContext(ctx context.Context) (context.Context, context.Ca
 
 func (ffs *fuseFs) CreateFile(ctx context.Context, fi *dokan.FileInfo, cd *dokan.CreateData) (dokan.File, dokan.CreateStatus, error) {
 	path := strings.TrimLeft(strings.Replace(fi.Path()[1:], "\\", "/", -1), "/")
+	if path == "" {
+		path = "."
+	}
 	if cd.CreateDisposition == dokan.FileCreate {
 		fsys, ok := ffs.fsys.(interface {
 			Create(name string) (fs.File, error)
