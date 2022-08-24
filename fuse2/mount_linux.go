@@ -104,13 +104,22 @@ func (f *fuseFile) Write(data []byte, off int64) (uint32, fuse.Status) {
 	return uint32(len), fuse.OK
 }
 
-func MountVolume(fsys fs.FS, mountPoint string) <-chan error {
+type handle struct {
+	nfs    *pathfs.PathNodeFs
+	server *fuse.Server
+}
 
+func (h *handle) Close() error {
+	return h.server.Unmount()
+}
+
+func MountFS(fsys fs.FS, mountPoint string, opt interface{}) (io.Closer, error) {
 	nfs := pathfs.NewPathNodeFs(&fuseFs{FileSystem: pathfs.NewDefaultFileSystem(), fsys: fsys}, nil)
 	server, _, err := nodefs.MountRoot(mountPoint, nfs.Root(), nil)
 	if err != nil {
 		log.Fatalf("Mount fail: %v\n", err)
 	}
 	go server.Serve()
-	return make(chan error)
+	server.WaitMount()
+	return &handle{nfs: nfs, server: server}, err
 }

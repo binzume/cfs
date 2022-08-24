@@ -9,14 +9,10 @@ import (
 
 func TestMount(t *testing.T) {
 	fsys := os.DirFS("../volume/testdata")
-
-	go func() {
-		err := <-MountVolume(fsys, "X:")
-
-		if err != nil {
-			t.Errorf("error: %v", err)
-		}
-	}()
+	close, err := MountFS(fsys, "X:", nil)
+	if err != nil {
+		t.Fatalf("MountFS() error: %v", err)
+	}
 
 	time.Sleep(1 * time.Second)
 
@@ -30,4 +26,9 @@ func TestMount(t *testing.T) {
 	}
 
 	time.Sleep(5 * time.Second)
+
+	err = close.Close()
+	if err != nil {
+		t.Errorf("Close() error: %v", err)
+	}
 }
