@@ -9,7 +9,7 @@ import (
 
 func TestMount(t *testing.T) {
 	fsys := os.DirFS("../volume/testdata")
-	close, err := MountFS(fsys, "X:", nil)
+	close, err := MountFS("X:", fsys, nil)
 	if err != nil {
 		t.Fatalf("MountFS() error: %v", err)
 	}

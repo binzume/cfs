@@ -27,6 +27,6 @@ func init() {
 	dkango.Init()
 }
 
-func MountFS(fsys fs.FS, mountPoint string, opt interface{}) (io.Closer, error) {
+func MountFS(mountPoint string, fsys fs.FS, opt interface{}) (io.Closer, error) {
 	return dkango.MountFS(mountPoint, fsys, nil)
 }
