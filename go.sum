@@ -2,6 +2,8 @@ github.com/binzume/dkango v0.0.0-20220824135209-7588a31291a2 h1:dKoRnZUFD86ObsIL
 github.com/binzume/dkango v0.0.0-20220824135209-7588a31291a2/go.mod h1:1vngZTylGCc0Zya2Tm50TV61LFJFuUryACSWU+ZDxng=
 github.com/binzume/dkango v0.0.0-20220824145508-5c707dadbe86 h1:4PezpQQfP1ltqrCrk4aTABvHGhkl1na4/HsNUxDNRHA=
 github.com/binzume/dkango v0.0.0-20220824145508-5c707dadbe86/go.mod h1:1vngZTylGCc0Zya2Tm50TV61LFJFuUryACSWU+ZDxng=
+github.com/binzume/dkango v0.0.0-20220825110454-4f5c26ee8512 h1:X+m3KyvCCg6RHFTxgkDCUMseIQOhydJIqZ5+cOLu/Ug=
+github.com/binzume/dkango v0.0.0-20220825110454-4f5c26ee8512/go.mod h1:1vngZTylGCc0Zya2Tm50TV61LFJFuUryACSWU+ZDxng=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
