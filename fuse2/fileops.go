@@ -32,3 +32,13 @@ func WriteAt(f io.Closer, b []byte, off int64) (int, error) {
 	}
 	return 0, fs.ErrInvalid
 }
+
+func Truncate(fsys fs.FS, name string, size int64) error {
+	s, ok := fsys.(interface {
+		Truncate(string, int64) error
+	})
+	if !ok {
+		return fs.ErrInvalid
+	}
+	return s.Truncate(name, size)
+}

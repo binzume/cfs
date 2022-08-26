@@ -1,13 +1,17 @@
 package fuse2
 
 import (
+	"errors"
 	"io"
 	"io/fs"
-	"log"
 
-	"github.com/hanwen/go-fuse/fuse"
-	"github.com/hanwen/go-fuse/fuse/nodefs"
-	"github.com/hanwen/go-fuse/fuse/pathfs"
+	"fmt"
+	"os"
+	"os/signal"
+
+	"github.com/hanwen/go-fuse/v2/fuse"
+	"github.com/hanwen/go-fuse/v2/fuse/nodefs"
+	"github.com/hanwen/go-fuse/v2/fuse/pathfs"
 )
 
 type fuseFs struct {
@@ -22,7 +26,15 @@ type fuseFile struct {
 	fstat fs.FileInfo
 }
 
+func fixPath(name string) string {
+	if name == "" {
+		return "."
+	}
+	return name
+}
+
 func (t *fuseFs) GetAttr(name string, context *fuse.Context) (*fuse.Attr, fuse.Status) {
+	name = fixPath(name)
 	f, err := fs.Stat(t.fsys, name)
 	if err != nil {
 		return nil, fuse.ENOENT
@@ -43,6 +55,7 @@ func (t *fuseFs) GetAttr(name string, context *fuse.Context) (*fuse.Attr, fuse.S
 }
 
 func (t *fuseFs) OpenDir(name string, context *fuse.Context) (c []fuse.DirEntry, code fuse.Status) {
+	name = fixPath(name)
 	files, err := fs.ReadDir(t.fsys, name)
 	if err != nil {
 		return nil, fuse.ENOENT
@@ -57,6 +70,7 @@ func (t *fuseFs) OpenDir(name string, context *fuse.Context) (c []fuse.DirEntry,
 }
 
 func (t *fuseFs) Open(name string, flags uint32, context *fuse.Context) (file nodefs.File, code fuse.Status) {
+	name = fixPath(name)
 	f, err := fs.Stat(t.fsys, name)
 	if err != nil {
 		return nil, fuse.ENOENT
@@ -68,6 +82,26 @@ func (t *fuseFs) Open(name string, flags uint32, context *fuse.Context) (file no
 	return &fuseFile{File: nodefs.NewDefaultFile(), fstat: f, fsys: t.fsys, path: name}, fuse.OK
 }
 
+func (t *fuseFs) Create(name string, flags uint32, mode uint32, context *fuse.Context) (nodefs.File, fuse.Status) {
+	name = fixPath(name)
+
+	fsys, ok := t.fsys.(interface {
+		OpenWriter(string, int) (io.WriteCloser, error)
+	})
+	if !ok {
+		return nil, fuse.ENOSYS
+	}
+
+	// TOUCH
+	ff, err := fsys.OpenWriter(name, os.O_RDWR|os.O_CREATE|os.O_TRUNC)
+	if err != nil {
+		return nil, fuse.ENOSYS
+	}
+	ff.Close()
+
+	return &fuseFile{File: nodefs.NewDefaultFile(), fstat: nil, fsys: t.fsys, path: name}, fuse.OK
+}
+
 func (f *fuseFile) Read(buf []byte, off int64) (fuse.ReadResult, fuse.Status) {
 	ff, err := f.fsys.Open(f.path)
 	if err != nil {
@@ -76,7 +110,7 @@ func (f *fuseFile) Read(buf []byte, off int64) (fuse.ReadResult, fuse.Status) {
 	defer ff.Close()
 
 	len, err := ReadAt(ff, buf, off)
-	if err != nil {
+	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
 		return nil, fuse.ENOSYS
 	}
 
@@ -85,13 +119,13 @@ func (f *fuseFile) Read(buf []byte, off int64) (fuse.ReadResult, fuse.Status) {
 
 func (f *fuseFile) Write(data []byte, off int64) (uint32, fuse.Status) {
 	fsys, ok := f.fsys.(interface {
-		OpenWriter(string) (io.WriteCloser, error)
+		OpenWriter(string, int) (io.WriteCloser, error)
 	})
 	if !ok {
 		return 0, fuse.ENOSYS
 	}
 
-	ff, err := fsys.OpenWriter(f.path)
+	ff, err := fsys.OpenWriter(f.path, os.O_RDWR|os.O_CREATE)
 	if err != nil {
 		return 0, fuse.ENOSYS
 	}
@@ -102,6 +136,14 @@ func (f *fuseFile) Write(data []byte, off int64) (uint32, fuse.Status) {
 		return 0, fuse.ENOSYS
 	}
 	return uint32(len), fuse.OK
+}
+
+func (f *fuseFile) Truncate(size uint64) fuse.Status {
+	err := Truncate(f.fsys, f.path, int64(size))
+	if err != nil {
+		return fuse.ENOSYS
+	}
+	return fuse.OK
 }
 
 type handle struct {
@@ -117,9 +159,22 @@ func MountFS(mountPoint string, fsys fs.FS, opt interface{}) (io.Closer, error) 
 	nfs := pathfs.NewPathNodeFs(&fuseFs{FileSystem: pathfs.NewDefaultFileSystem(), fsys: fsys}, nil)
 	server, _, err := nodefs.MountRoot(mountPoint, nfs.Root(), nil)
 	if err != nil {
-		log.Fatalf("Mount fail: %v\n", err)
+		return nil, err
 	}
+	h := &handle{nfs: nfs, server: server}
+
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt)
+	go func() {
+		<-sig
+		err := h.Close()
+		if err != nil {
+			fmt.Printf("Failed to unmount %s, you should umount manually: %w\n", mountPoint, err)
+		}
+		os.Exit(1)
+	}()
+
 	go server.Serve()
 	server.WaitMount()
-	return &handle{nfs: nfs, server: server}, err
+	return h, err
 }
