@@ -3,7 +3,7 @@ module github.com/binzume/cfs
 go 1.17
 
 require (
-	github.com/binzume/dkango v0.0.0-20220825110454-4f5c26ee8512
+	github.com/binzume/dkango v0.1.0
 	github.com/fsnotify/fsnotify v1.5.1
 	github.com/gin-gonic/gin v1.7.7
 	github.com/gorilla/websocket v1.4.2
