@@ -6,6 +6,7 @@ Only the following packages in this library implement the fs.FS interface.
 
 - httpfs
 - zipfs
+- fuse => Move to https://github.com/binzume/fsmount
 
 # Simple FileSystem abstraction layer library for Go
 
